@@ -1,0 +1,1196 @@
+{
+  "users": [
+    {
+      "id": 1760086987908,
+      "name": "Manish",
+      "surname": "chopra",
+      "age": "24",
+      "gender": "Male",
+      "email": "chopramanish760@gmail.com",
+      "phone": "8278236005",
+      "regNumber": "2440014",
+      "password": "Manish@2000",
+      "role": "STUDENT",
+      "department": "Computer Science & Engineering"
+    },
+    {
+      "id": 1760087091225,
+      "name": "abhishek",
+      "surname": "kumawat",
+      "age": "20",
+      "gender": "Male",
+      "email": "abhishekmarothiya072002@gmail.com",
+      "phone": "8003086079",
+      "regNumber": "2440015",
+      "password": "Abhi@123",
+      "role": "ORGANIZER",
+      "department": "Computer Science & Engineering",
+      "bloodGroup": "O+",
+      "address": "jaipur",
+      "branch": "MCA",
+      "pincode": "126102"
+    },
+    {
+      "id": "6e9b554e-0097-4276-b026-398c885641e2",
+      "name": "Ritik ",
+      "email": "rinkushamerwal843@gmail.com",
+      "password": "Rjain@123",
+      "role": "STUDENT"
+    },
+    {
+      "id": 1760120649960,
+      "name": "Priyanshu",
+      "surname": "Patel",
+      "age": "25",
+      "gender": "Male",
+      "email": "priyanshu102938@gmail.com",
+      "phone": "9468070272",
+      "regNumber": "2440016",
+      "password": "Patel@123",
+      "role": "ORGANIZER"
+    },
+    {
+      "id": 1760290524622,
+      "name": "Naveen",
+      "surname": "Chopra",
+      "age": "26",
+      "gender": "Male",
+      "email": "rinkushamerwal843@gmail.com",
+      "phone": "9466319054",
+      "regNumber": "2440017",
+      "password": "Nav@123",
+      "role": "STUDENT"
+    }
+  ],
+  "events": [
+    {
+      "id": 1760087132558,
+      "title": "Web-D",
+      "date": "2025-10-11",
+      "time": "16:00",
+      "venue": "LH-A",
+      "capacity": 20,
+      "taken": 3,
+      "bookings": [
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 1,
+          "role": "S",
+          "eventId": 1760087132558
+        },
+        {
+          "regNumber": "2440016",
+          "name": "Priyanshu",
+          "seat": 2,
+          "role": "O",
+          "eventId": 1760087132558
+        },
+        {
+          "regNumber": "2440015",
+          "name": "abhishek",
+          "seat": 3,
+          "role": "O",
+          "eventId": 1760087132558
+        }
+      ]
+    },
+    {
+      "id": 1760118090880,
+      "title": "AI",
+      "date": "2025-10-11",
+      "time": "11:32",
+      "venue": "LH-D",
+      "capacity": 51,
+      "taken": 2,
+      "bookings": [
+        {
+          "regNumber": "2440016",
+          "name": "Priyanshu",
+          "seat": 1,
+          "role": "O",
+          "eventId": 1760118090880
+        },
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 2,
+          "role": "S",
+          "eventId": 1760118090880
+        }
+      ],
+      "creatorRegNumber": "2440015"
+    },
+    {
+      "id": 1760119847635,
+      "title": "Web-D",
+      "date": "2025-10-11",
+      "time": "11:49",
+      "venue": "LH-C",
+      "capacity": 25,
+      "taken": 2,
+      "bookings": [
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 1,
+          "role": "S",
+          "eventId": 1760119847635
+        },
+        {
+          "regNumber": "2440016",
+          "name": "Priyanshu",
+          "seat": 2,
+          "role": "O",
+          "eventId": 1760119847635
+        }
+      ],
+      "creatorRegNumber": "2440015"
+    },
+    {
+      "id": 1760120769342,
+      "title": "Agentic Ai",
+      "date": "2025-10-20",
+      "time": "11:00",
+      "venue": "Seminar Hall 1",
+      "capacity": 30,
+      "taken": 3,
+      "bookings": [
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 1,
+          "role": "S",
+          "eventId": 1760120769342
+        },
+        {
+          "regNumber": "2440017",
+          "name": "Naveen",
+          "seat": 2,
+          "role": "S",
+          "eventId": 1760120769342
+        },
+        {
+          "regNumber": "2440015",
+          "name": "abhishek",
+          "seat": 3,
+          "role": "O",
+          "eventId": 1760120769342
+        }
+      ],
+      "creatorRegNumber": "2440016"
+    },
+    {
+      "id": 1760162411918,
+      "title": "Web-D",
+      "date": "2025-10-12",
+      "time": "10:29",
+      "venue": "LH-C",
+      "capacity": 25,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "duration": 90,
+      "category": "Technology"
+    },
+    {
+      "id": 1760172470971,
+      "title": "manish",
+      "date": "2025-10-11",
+      "time": "14:19",
+      "venue": "MAIN BUILDING",
+      "capacity": 20,
+      "duration": 1,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true
+    },
+    {
+      "id": 1760173642498,
+      "title": "hello",
+      "date": "2025-10-11",
+      "time": "14:38",
+      "venue": "LH-D",
+      "capacity": 20,
+      "duration": 6,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true
+    },
+    {
+      "id": 1760174222181,
+      "title": "Music Night",
+      "date": "2025-10-11",
+      "time": "14:48",
+      "venue": "SEMINAR HALL A",
+      "capacity": 20,
+      "duration": 10,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true
+    },
+    {
+      "id": 1760174955986,
+      "title": "Sports",
+      "date": "2025-10-12",
+      "time": "14:00",
+      "venue": "OPEN THEATER",
+      "capacity": 500,
+      "duration": 180,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true
+    },
+    {
+      "id": 1760175534528,
+      "title": "Machine Learning",
+      "date": "2025-10-12",
+      "time": "15:00",
+      "venue": "SEMINAR HALL A",
+      "capacity": 55,
+      "duration": 60,
+      "taken": 0,
+      "bookings": [],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true
+    },
+    {
+      "id": 1760190369278,
+      "title": "Graba Night",
+      "date": "2025-10-15",
+      "time": "11:00",
+      "venue": "SJA",
+      "category": "Cultural",
+      "capacity": 90,
+      "duration": 180,
+      "taken": 3,
+      "bookings": [
+        {
+          "regNumber": "2440016",
+          "name": "Priyanshu",
+          "seat": 1,
+          "role": "O",
+          "eventId": 1760190369278
+        },
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 2,
+          "role": "S",
+          "eventId": 1760190369278
+        },
+        {
+          "regNumber": "2440017",
+          "name": "Naveen",
+          "seat": 3,
+          "role": "S",
+          "eventId": 1760190369278
+        }
+      ],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": false
+    },
+    {
+      "id": 1760282781688,
+      "title": "Web-D",
+      "date": "2025-10-12",
+      "time": "21:57",
+      "venue": "LHB (MB)",
+      "category": "Technology",
+      "capacity": 52,
+      "duration": 30,
+      "taken": 2,
+      "bookings": [
+        {
+          "regNumber": "2440016",
+          "name": "Priyanshu",
+          "seat": 1,
+          "role": "O",
+          "eventId": 1760282781688
+        },
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "seat": 2,
+          "role": "S",
+          "eventId": 1760282781688
+        }
+      ],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": true,
+      "sent60": true,
+      "sent45": true
+    },
+    {
+      "id": 1760530437054,
+      "title": "Dance",
+      "date": "2025-10-24",
+      "time": "17:00",
+      "venue": "MAIN GROUND",
+      "category": "Cultural",
+      "capacity": 100,
+      "duration": 180,
+      "taken": 0,
+      "bookings": [],
+      "waitlist": [],
+      "volunteers": [
+        {
+          "regNumber": "2440014",
+          "name": "Manish",
+          "volunteerId": "V01",
+          "role": "Stage Management"
+        }
+      ],
+      "volunteerRequests": [
+        {
+          "id": 1760530464906,
+          "regNumber": "2440017",
+          "role": "Registration Desk",
+          "status": "pending",
+          "requestedAt": "2025-10-15T12:14:24.906Z"
+        },
+        {
+          "id": 1760530858484,
+          "regNumber": "2440014",
+          "role": "Stage Management",
+          "status": "accepted",
+          "requestedAt": "2025-10-15T12:20:58.484Z"
+        },
+        {
+          "id": 1760534322255,
+          "regNumber": "2440016",
+          "role": "Logistics",
+          "status": "pending",
+          "requestedAt": "2025-10-15T13:18:42.255Z"
+        }
+      ],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": false
+    },
+    {
+      "id": 1760534396704,
+      "title": "Dj Night",
+      "date": "2025-10-23",
+      "time": "09:00",
+      "venue": "NEW SPORTS COMPLEX",
+      "category": "Fest",
+      "capacity": 500,
+      "duration": 240,
+      "taken": 0,
+      "bookings": [],
+      "waitlist": [],
+      "volunteers": [],
+      "volunteerRequests": [],
+      "resources": [
+        "Sound System",
+        "Microphone",
+        "Podium",
+        "LED Screen",
+        "Lighting Kit"
+      ],
+      "creatorRegNumber": "2440015",
+      "liveNotificationSent": false
+    }
+  ],
+  "media": [
+    {
+      "id": 1760087424999,
+      "name": "WhatsApp Image 2025-06-07 at 14.56.26_9b29d5c8.jpg",
+      "url": "/uploads/8d94bdd804b9bbe115cbb1fb11d8d3cc.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760119866310,
+      "eventId": 1760119847635,
+      "name": "R.jpeg",
+      "url": "/uploads/a0d0a3d703711171468379fa25805f17.jpeg",
+      "type": "photo"
+    },
+    {
+      "id": 1760119875788,
+      "eventId": 1760119847635,
+      "name": "WhatsApp Image 2025-09-14 at 13.02.40_86072cf8.jpg",
+      "url": "/uploads/db7f304436c81d34a0d268a3b67d98b0.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760119931047,
+      "eventId": 1760119920207,
+      "name": "WhatsApp Image 2025-09-14 at 13.02.40_499b4df1.jpg",
+      "url": "/uploads/bcd7ed487a757783b0916bb689584731.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760120044582,
+      "eventId": 1760119847635,
+      "name": "WhatsApp Image 2025-09-14 at 13.02.40_499b4df1.jpg",
+      "url": "/uploads/055ee4e90847ca93fe62d959880b143d.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760120049492,
+      "eventId": 1760119847635,
+      "name": "styled_sequence_diagram_vertical_no_payment.jpg",
+      "url": "/uploads/b0d3b64870b076806c6fefbe47a17924.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760120053776,
+      "eventId": 1760119847635,
+      "name": "campus_pulse_use_case.png",
+      "url": "/uploads/f04808d9069e9435fce08a260bb36385.png",
+      "type": "photo"
+    },
+    {
+      "id": 1760120059073,
+      "eventId": 1760119847635,
+      "name": "WhatsApp Image 2025-08-21 at 19.34.41_59a7a29f.jpg",
+      "url": "/uploads/392f2a87a591421a3ab052c47f5e663e.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760120063803,
+      "eventId": 1760119847635,
+      "name": "WhatsApp Image 2025-07-03 at 13.41.12_43a68971 (1).jpg",
+      "url": "/uploads/71f28d0e042f0f1657d6899586fcdaf6.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760120788747,
+      "eventId": 1760120769342,
+      "name": "pic.jpg",
+      "url": "/uploads/2a198f85906fe749a0a000e2b9e187c5.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760162369869,
+      "eventId": 1760118090880,
+      "name": "WhatsApp Image 2025-09-14 at 16.28.13_c145c098.jpg",
+      "url": "/uploads/2f746b9af6fc3345aed92e65ed80dc0e.jpg",
+      "type": "photo"
+    },
+    {
+      "id": 1760190584884,
+      "eventId": 1760190369278,
+      "name": "WhatsApp Video 2025-10-06 at 21.44.48_52551f55.mp4",
+      "url": "/uploads/db288843840c7c6cba5756ba80c37f61.mp4",
+      "type": "video"
+    }
+  ],
+  "notifications": {
+    "2440014": [
+      {
+        "msg": "📢 New Event: Dj Night on 2025-10-23",
+        "time": "2025-10-15T13:19:56.704Z",
+        "read": false
+      },
+      {
+        "msg": "✅ You accepted volunteer role 'Stage Management' for 'Dance'.",
+        "time": "2025-10-15T13:02:54.150Z",
+        "read": false
+      },
+      {
+        "msg": "🤝 Organizer invited you to volunteer for 'Dance' as 'Stage Management'.",
+        "time": "2025-10-15T12:20:58.484Z",
+        "read": false,
+        "type": "volunteer_request",
+        "eventId": 1760530437054,
+        "role": "Stage Management"
+      },
+      {
+        "msg": "📢 New Event: Dance on 2025-10-24",
+        "time": "2025-10-15T12:13:57.055Z",
+        "read": false
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Graba Night",
+        "time": "2025-10-12T16:54:41.009Z",
+        "read": false
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-12T16:54:36.965Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Web-D' is now live!",
+        "time": "2025-10-12T16:51:40.635Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-12T15:26:21.689Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Ai on 2025-10-15",
+        "time": "2025-10-12T11:46:15.338Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Manish on 2025-10-15",
+        "time": "2025-10-12T11:37:50.968Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:35:54.122Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:24:04.127Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Machine Learning' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Sports' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Graba Night on 2025-10-15",
+        "time": "2025-10-11T13:46:09.279Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Cricket on 2025-10-12",
+        "time": "2025-10-11T09:52:59.411Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Machine Learning on 2025-10-12",
+        "time": "2025-10-11T09:38:54.528Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Sports on 2025-10-12",
+        "time": "2025-10-11T09:29:15.986Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'Music Night' is now live!",
+        "time": "2025-10-11T09:18:10.908Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Music Night on 2025-10-11",
+        "time": "2025-10-11T09:17:02.181Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'hello' is now live!",
+        "time": "2025-10-11T09:08:03.057Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: hello on 2025-10-11",
+        "time": "2025-10-11T09:07:22.498Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'manish' is now live!",
+        "time": "2025-10-11T08:49:11.275Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: manish on 2025-10-13",
+        "time": "2025-10-11T08:47:50.971Z",
+        "read": true
+      },
+      {
+        "msg": "✏️ Event Updated: Details for 'Web-D' have changed.",
+        "time": "2025-10-11T06:18:52.645Z",
+        "read": true
+      },
+      {
+        "msg": "✏️ Event Updated: Details for 'AI' have changed.",
+        "time": "2025-10-11T06:01:16.491Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-11T06:00:11.918Z",
+        "read": true
+      },
+      {
+        "msg": "❌ Event Cancelled: 'ML' has been cancelled.",
+        "time": "2025-10-11T05:50:27.762Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-10T18:27:18.373Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for ML",
+        "time": "2025-10-10T18:27:13.178Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for AI",
+        "time": "2025-10-10T18:27:09.638Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Agentic Ai on 2025-10-20",
+        "time": "2025-10-10T18:26:09.342Z",
+        "read": true
+      },
+      {
+        "msg": "✏️ Event Updated: Details for 'Web-D' have changed.",
+        "time": "2025-10-10T18:14:45.346Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T18:13:12.021Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: ML on 2025-10-14",
+        "time": "2025-10-10T18:12:00.207Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-11",
+        "time": "2025-10-10T18:10:47.636Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Web-D' has been cancelled.",
+        "time": "2025-10-10T17:27:08.434Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T09:06:23.885Z",
+        "read": true
+      }
+    ],
+    "2440015": [
+      {
+        "msg": "📢 New Event: Dj Night on 2025-10-23",
+        "time": "2025-10-15T13:19:56.704Z",
+        "read": true
+      },
+      {
+        "msg": "✅ 2440014 accepted volunteer role 'Stage Management' for 'Dance'.",
+        "time": "2025-10-15T13:02:54.151Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Dance on 2025-10-24",
+        "time": "2025-10-15T12:13:57.055Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-12T19:05:44.462Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Agentic Ai' has been cancelled.",
+        "time": "2025-10-12T19:05:37.739Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'Web-D' is now live!",
+        "time": "2025-10-12T16:51:40.635Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-12T15:26:21.690Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Ai on 2025-10-15",
+        "time": "2025-10-12T11:46:15.338Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Manish on 2025-10-15",
+        "time": "2025-10-12T11:37:50.968Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:35:54.122Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:24:04.127Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'Machine Learning' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'Sports' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-11T14:44:34.210Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Agentic Ai' has been cancelled.",
+        "time": "2025-10-11T14:32:54.229Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Graba Night on 2025-10-15",
+        "time": "2025-10-11T13:46:09.279Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Cricket on 2025-10-12",
+        "time": "2025-10-11T09:52:59.411Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-11T09:40:35.651Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Machine Learning on 2025-10-12",
+        "time": "2025-10-11T09:38:54.528Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Sports on 2025-10-12",
+        "time": "2025-10-11T09:29:15.986Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'Music Night' is now live!",
+        "time": "2025-10-11T09:18:10.908Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Music Night on 2025-10-11",
+        "time": "2025-10-11T09:17:02.181Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'hello' is now live!",
+        "time": "2025-10-11T09:08:03.057Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: hello on 2025-10-11",
+        "time": "2025-10-11T09:07:22.498Z",
+        "read": true
+      },
+      {
+        "msg": "🔥 Event Live: 'manish' is now live!",
+        "time": "2025-10-11T08:49:11.275Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: manish on 2025-10-13",
+        "time": "2025-10-11T08:47:50.971Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Web-D' has been cancelled.",
+        "time": "2025-10-11T08:46:47.113Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-11T06:24:36.351Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-11T06:00:11.918Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Agentic Ai' has been cancelled.",
+        "time": "2025-10-10T18:32:32.730Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-10T18:32:15.541Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Agentic Ai on 2025-10-20",
+        "time": "2025-10-10T18:26:09.343Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: ML on 2025-10-14",
+        "time": "2025-10-10T18:12:00.207Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-11",
+        "time": "2025-10-10T18:10:47.636Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T17:35:39.797Z",
+        "read": true
+      }
+    ],
+    "2440016": [
+      {
+        "msg": "📢 New Event: Dj Night on 2025-10-23",
+        "time": "2025-10-15T13:19:56.704Z",
+        "read": false
+      },
+      {
+        "msg": "🤝 Organizer invited you to volunteer for 'Dance' as 'Logistics'.",
+        "time": "2025-10-15T13:18:42.255Z",
+        "read": false,
+        "type": "volunteer_request",
+        "eventId": 1760530437054,
+        "role": "Logistics"
+      },
+      {
+        "msg": "📢 New Event: Dance on 2025-10-24",
+        "time": "2025-10-15T12:13:57.055Z",
+        "read": false
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Graba Night",
+        "time": "2025-10-12T16:54:18.399Z",
+        "read": false
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-12T16:54:07.998Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Web-D' is now live!",
+        "time": "2025-10-12T16:51:40.635Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-12T15:26:21.690Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Ai on 2025-10-15",
+        "time": "2025-10-12T11:46:15.338Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Manish on 2025-10-15",
+        "time": "2025-10-12T11:37:50.968Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:35:54.122Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:24:04.127Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Machine Learning' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Sports' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Graba Night on 2025-10-15",
+        "time": "2025-10-11T13:46:09.279Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Cricket on 2025-10-12",
+        "time": "2025-10-11T09:52:59.411Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Machine Learning on 2025-10-12",
+        "time": "2025-10-11T09:38:54.528Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Sports on 2025-10-12",
+        "time": "2025-10-11T09:29:15.986Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Music Night' is now live!",
+        "time": "2025-10-11T09:18:10.908Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Music Night on 2025-10-11",
+        "time": "2025-10-11T09:17:02.181Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'hello' is now live!",
+        "time": "2025-10-11T09:08:03.057Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: hello on 2025-10-11",
+        "time": "2025-10-11T09:07:22.498Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'manish' is now live!",
+        "time": "2025-10-11T08:49:11.275Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: manish on 2025-10-13",
+        "time": "2025-10-11T08:47:50.972Z",
+        "read": false
+      },
+      {
+        "msg": "✏️ Event Updated: Details for 'Web-D' have changed.",
+        "time": "2025-10-11T06:18:52.645Z",
+        "read": true
+      },
+      {
+        "msg": "✏️ Event Updated: Details for 'AI' have changed.",
+        "time": "2025-10-11T06:01:16.491Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-11T06:00:11.918Z",
+        "read": true
+      },
+      {
+        "msg": "❌ Event Cancelled: 'ML' has been cancelled.",
+        "time": "2025-10-11T05:50:27.761Z",
+        "read": true
+      },
+      {
+        "msg": "📢 New Event: Agentic Ai on 2025-10-20",
+        "time": "2025-10-10T18:26:09.343Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T18:25:32.142Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for ML",
+        "time": "2025-10-10T18:25:29.791Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for AI",
+        "time": "2025-10-10T18:25:26.068Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T18:25:22.717Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Web-D' has been cancelled.",
+        "time": "2025-10-10T18:24:45.698Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Web-D",
+        "time": "2025-10-10T18:24:32.984Z",
+        "read": true
+      }
+    ],
+    "2440017": [
+      {
+        "msg": "📢 New Event: Dj Night on 2025-10-23",
+        "time": "2025-10-15T13:19:56.704Z",
+        "read": false
+      },
+      {
+        "msg": "🤝 Organizer invited you to volunteer for 'Dance' as 'Registration Desk'.",
+        "time": "2025-10-15T12:14:24.906Z",
+        "read": true,
+        "type": "volunteer_request",
+        "eventId": 1760530437054,
+        "role": "Registration Desk"
+      },
+      {
+        "msg": "📢 New Event: Dance on 2025-10-24",
+        "time": "2025-10-15T12:13:57.055Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Graba Night",
+        "time": "2025-10-12T17:52:15.152Z",
+        "read": true
+      },
+      {
+        "msg": "✅ Your ticket for 'Graba Night' has been cancelled.",
+        "time": "2025-10-12T17:49:09.067Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Agentic Ai",
+        "time": "2025-10-12T17:48:21.356Z",
+        "read": true
+      },
+      {
+        "msg": "🎟️ You booked a ticket for Graba Night",
+        "time": "2025-10-12T17:44:08.449Z",
+        "read": true
+      }
+    ],
+    "undefined": [
+      {
+        "msg": "📢 New Event: Dj Night on 2025-10-23",
+        "time": "2025-10-15T13:19:56.704Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Dance on 2025-10-24",
+        "time": "2025-10-15T12:13:57.055Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Web-D' is now live!",
+        "time": "2025-10-12T16:51:40.635Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-12T15:26:21.690Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Ai on 2025-10-15",
+        "time": "2025-10-12T11:46:15.338Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Manish on 2025-10-15",
+        "time": "2025-10-12T11:37:50.968Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:35:54.122Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-15",
+        "time": "2025-10-12T11:24:04.127Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Machine Learning' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Sports' is now live!",
+        "time": "2025-10-12T09:57:50.601Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Graba Night on 2025-10-15",
+        "time": "2025-10-11T13:46:09.279Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Cricket on 2025-10-12",
+        "time": "2025-10-11T09:52:59.411Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Machine Learning on 2025-10-12",
+        "time": "2025-10-11T09:38:54.528Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Sports on 2025-10-12",
+        "time": "2025-10-11T09:29:15.986Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'Music Night' is now live!",
+        "time": "2025-10-11T09:18:10.908Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Music Night on 2025-10-11",
+        "time": "2025-10-11T09:17:02.181Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'hello' is now live!",
+        "time": "2025-10-11T09:08:03.057Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: hello on 2025-10-11",
+        "time": "2025-10-11T09:07:22.498Z",
+        "read": false
+      },
+      {
+        "msg": "🔥 Event Live: 'manish' is now live!",
+        "time": "2025-10-11T08:49:11.275Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: manish on 2025-10-13",
+        "time": "2025-10-11T08:47:50.972Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-12",
+        "time": "2025-10-11T06:00:11.918Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Agentic Ai on 2025-10-20",
+        "time": "2025-10-10T18:26:09.343Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: ML on 2025-10-14",
+        "time": "2025-10-10T18:12:00.207Z",
+        "read": false
+      },
+      {
+        "msg": "📢 New Event: Web-D on 2025-10-11",
+        "time": "2025-10-10T18:10:47.636Z",
+        "read": false
+      }
+    ]
+  },
+  "messages": []
+}
