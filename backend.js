@@ -47,8 +47,15 @@ app.post("/api/signup", (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
   if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
-  if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
-  const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role };
+  let finalRole = role;
+  let organizerStatus = undefined;
+  if (role === 'ORGANIZER') {
+    // Treat as request; user behaves as student until approved
+    finalRole = 'STUDENT';
+    organizerStatus = 'PENDING';
+  }
+  const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role: finalRole };
+  if (organizerStatus) user.organizerStatus = organizerStatus;
   data.users.push(user); saveData(data);
   return res.json({ ok: true, user });
 });
@@ -73,6 +80,9 @@ app.get("/api/users/:regNumber", (req, res) => { const data = loadData(); const 
 // Admin list endpoints
 app.get('/api/admin/users', (req, res) => { const data = loadData(); const students = data.users.filter(u => u.role === 'STUDENT'); res.json({ ok: true, users: students }); });
 app.get('/api/admin/organizers', (req, res) => { const data = loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
+// Admin: pending organizer requests
+app.get('/api/admin/organizers/pending', (req,res)=>{ const data=loadData(); const list=(data.users||[]).filter(u=>u.organizerStatus==='PENDING'); res.json({ ok:true, users:list }); });
+app.post('/api/admin/organizers/verify', (req,res)=>{ const data=loadData(); const { regNumber, decision, reason } = req.body; const u=data.users.find(x=>x.regNumber===regNumber); if(!u) return res.status(404).json({ ok:false, error:'User not found' }); if(u.organizerStatus!=='PENDING') return res.status(400).json({ ok:false, error:'No pending request' }); if(decision==='approve'){ u.organizerStatus='APPROVED'; u.role='ORGANIZER'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:"✅ Your organizer request has been approved. Organizer dashboard unlocked.", time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'approved' }); } else if(decision==='reject'){ u.organizerStatus='REJECTED'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:`❌ Your organizer request was rejected.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'rejected' }); } else { return res.status(400).json({ ok:false, error:'Invalid decision' }); } });
 // Admin remove organizer ownership -> set role to STUDENT
 app.post('/api/admin/organizers/remove', (req, res) => {
   const data = loadData();
@@ -138,6 +148,21 @@ app.post('/api/admin/media/delete', (req,res)=>{ const data=loadData(); const { 
 
 // Admin change credentials
 app.post('/api/admin/credentials', (req,res)=>{ const data=loadData(); const { username, password } = req.body; if(!username || !password){ return res.status(400).json({ ok:false, error:'Missing fields' }); } data.admin = { username, password }; saveData(data); res.json({ ok:true }); });
+
+// Admin stats & active users
+app.get('/api/admin/stats', (req,res)=>{ const data=loadData(); const totalUsers=(data.users||[]).length; const totalEvents=(data.events||[]).length; const totalOrganizers=(data.users||[]).filter(u=>u.role==='ORGANIZER').length; const activeCut=Date.now()-5*60*1000; const activeUsers=(data.users||[]).filter(u=>u.lastSeen && (new Date(u.lastSeen).getTime()>activeCut)).length; res.json({ ok:true, totalUsers, totalEvents, totalOrganizers, activeUsers }); });
+
+// Track last seen on notifications fetch
+app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData(); const reg = req.params.regNumber; const u=data.users.find(x=>x.regNumber===reg); if(u){ u.lastSeen=new Date().toISOString(); saveData(data); } res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
+
+// Admin clear-all (dangerous): wipes users, events, media, notifications, messages, and uploads folder
+app.post('/api/admin/clear-all', (req,res)=>{
+  const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: loadData().admin };
+  // wipe uploads directory files
+  try { if (fs.existsSync(UPLOAD_DIR)) { fs.readdirSync(UPLOAD_DIR).forEach(f=>{ try{ fs.unlinkSync(path.join(UPLOAD_DIR,f)); }catch{} }); } } catch{}
+  saveData(base);
+  res.json({ ok:true });
+});
 
 app.post("/api/events", (req, res) => {
   const data = loadData();

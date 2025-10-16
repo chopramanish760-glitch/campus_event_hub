@@ -231,6 +231,11 @@ function showTab(tab) {
     if (tab === "notifications") renderNotifications(); if (tab === "organizer") renderOrganizer(); if (tab === "profile") renderProfile(); if (tab === 'admin') renderAdmin();
     render();
 }
+
+function showOrganizerPending() {
+    alert("Your organizer request is pending approval. You'll be notified when it's reviewed.");
+}
+
 function renderTabs() {
     const tabs = document.getElementById("tabs");
     if (!tabs) return;
@@ -245,7 +250,7 @@ function renderTabs() {
     <div class="tab" data-tab="tickets" onclick="showTab('tickets')">Tickets</div>
     <div class="tab" data-tab="media" onclick="showTab('media')">Media</div>
     <div class="tab" data-tab="🔔" onclick="showTab('notifications')">🔔</div>
-    ${currentUser && currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : ""}
+    ${(currentUser && currentUser.role === "ORGANIZER") ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : (currentUser && currentUser.organizerStatus === 'PENDING') ? `<div class="tab" data-tab="organizer" onclick="showOrganizerPending()" style="opacity: 0.6; cursor: not-allowed;">Org</div>` : ""}
     <div class="tab" data-tab="profile" onclick="showTab('profile')">You</div>`;
 }
 function render() {
@@ -984,6 +989,11 @@ async function doSignup() {
         const res = await fetch(API + "/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
         const data = await res.json();
         if (res.ok && data.ok) {
+            if(user.role==='ORGANIZER'){
+                msg.textContent = "✅ Request sent for organizer verification. You can use the app as a student until approval.";
+                setTimeout(showLogin, 1500);
+                return;
+            }
             msg.textContent = "✅ Account created! Signing you in...";
             setTimeout(async () => {
                 // Auto-login the newly created user
@@ -2025,6 +2035,7 @@ async function renderProfile(){
             <div class="detail-item"><label>Phone</label><span>${currentUser.phone}</span></div>
             <div class="detail-item"><label>Age</label><span>${currentUser.age}</span></div>
             <div class="detail-item"><label>Gender</label><span>${currentUser.gender}</span></div>
+            <div class="detail-item"><label>Role</label><span>${currentUser.role}${currentUser.organizerStatus ? ` (${currentUser.organizerStatus})` : ''}</span></div>
             ${currentUser.department ? `<div class="detail-item"><label>Department</label><span>${currentUser.department}</span></div>` : ''}
             ${currentUser.bloodGroup ? `<div class="detail-item"><label>Blood Group</label><span>${currentUser.bloodGroup}</span></div>` : ''}
             ${currentUser.address ? `<div class="detail-item"><label>Address</label><span>${currentUser.address}</span></div>` : ''}
@@ -2713,15 +2724,27 @@ function renderAdmin(){
     if(!c){ const root=document.createElement('div'); root.id='screen-admin'; root.className='content'; document.getElementById('app').appendChild(root); }
     const el = document.getElementById('screen-admin');
     el.innerHTML = `
-      <h2>Admin</h2>
+      <h2 style="display:flex;justify-content:space-between;align-items:center;">
+        <span>Admin</span>
+        <button class="btn" onclick="adminLogout()">Logout</button>
+      </h2>
       <div class="sub-nav">
-        <button class="sub-nav-btn" onclick="renderAdminUsers('students')">Users</button>
-        <button class="sub-nav-btn" onclick="renderAdminMedia()">Media</button>
-        <button class="sub-nav-btn" onclick="renderAdminEvents()">Events</button>
-        <button class="sub-nav-btn" onclick="renderAdminYou()">You</button>
+        <button class="sub-nav-btn" id="tab-users" onclick="setAdminTab('users')">Users</button>
+        <button class="sub-nav-btn" id="tab-media" onclick="setAdminTab('media')">Media</button>
+        <button class="sub-nav-btn" id="tab-events" onclick="setAdminTab('events')">Events</button>
+        <button class="sub-nav-btn" id="tab-verify" onclick="setAdminTab('verify')">Verify</button>
+        <button class="sub-nav-btn" id="tab-you" onclick="setAdminTab('you')">You</button>
       </div>
       <div id="admin-content"></div>`;
-    renderAdminUsers('students');
+    setAdminTab('users');
+}
+function setAdminTab(which){
+  document.querySelectorAll('.sub-nav-btn').forEach(b=>b.classList.remove('active'));
+  if(which==='users'){ document.getElementById('tab-users').classList.add('active'); renderAdminUsers('students'); }
+  if(which==='media'){ document.getElementById('tab-media').classList.add('active'); renderAdminMedia(); }
+  if(which==='events'){ document.getElementById('tab-events').classList.add('active'); renderAdminEvents(); }
+  if(which==='verify'){ document.getElementById('tab-verify').classList.add('active'); renderAdminVerify(); }
+  if(which==='you'){ document.getElementById('tab-you').classList.add('active'); renderAdminYou(); }
 }
 async function renderAdminUsers(which){
     const pane = document.getElementById('admin-content');
@@ -2775,8 +2798,108 @@ async function adminOpenEvent(eventId){ const events=(await (await fetch(API+'/a
 function adminDeleteEventPrompt(id, title){ const body=document.getElementById('modal-body'); body.innerHTML=`<h3>Delete Event</h3><div class="muted">${title}</div><textarea id="adminReason" placeholder="Reason (optional)" style="width:100%;height:90px;margin-top:8px;"></textarea><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminDeleteEvent(${id})">Send</button><button class="btn" onclick="closeModal()">Cancel</button></div>`; document.getElementById('modal').style.display='flex'; }
 async function adminDeleteEvent(id){ const reason=document.getElementById('adminReason').value||''; const r=await fetch(API+'/admin/events/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventId:id, reason})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Event deleted'); closeModal(); renderAdminEvents(); } else alert('Error: '+(d.error||'Failed')); }
 
-function renderAdminYou(){ const pane=document.getElementById('admin-content'); pane.innerHTML=`<h3>Admin Settings</h3><div class="card"><input id="admUser" placeholder="New Username"><div class="password-wrapper" style="margin-top:8px;"><input id="admPass" type="password" placeholder="New Password"><span class="password-toggle" onclick="togglePasswordVisibility('admPass')">👁️</span></div><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminSaveCreds()">Save</button><button class="btn" onclick="adminLogout()">Logout</button></div></div>`; }
+async function renderAdminVerify(){
+  const pane = document.getElementById('admin-content');
+  try {
+    const res = await fetch(API + '/admin/organizers/pending');
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      const users = data.users || [];
+      pane.innerHTML = `
+        <h3>Pending Organizer Requests</h3>
+        ${users.length === 0 ? '<p class="muted">No pending requests</p>' : ''}
+        ${users.map(u => `
+          <div class="card" onclick="showPendingUserDetails('${u.regNumber}')">
+            <div class="kv">
+              <b>Name:</b> <span class="value">${u.name} ${u.surname || ''}</span>
+            </div>
+            <div class="kv">
+              <b>Reg:</b> <span class="value">${u.regNumber}</span>
+            </div>
+            <div class="kv">
+              <b>Email:</b> <span class="value">${u.email}</span>
+            </div>
+            <div class="kv">
+              <b>Phone:</b> <span class="value">${u.phone}</span>
+            </div>
+            <div class="card-buttons">
+              <button class="btn primary" onclick="event.stopPropagation(); adminApproveOrganizer('${u.regNumber}')">Approve</button>
+              <button class="btn" onclick="event.stopPropagation(); adminRejectOrganizer('${u.regNumber}')">Reject</button>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    } else {
+      pane.innerHTML = '<p class="muted">Error loading pending requests</p>';
+    }
+  } catch (e) {
+    pane.innerHTML = '<p class="muted">Error loading pending requests</p>';
+  }
+}
+
+function showPendingUserDetails(regNumber) {
+  // This will show detailed user information in a modal
+  // Implementation can be added later if needed
+}
+
+async function adminApproveOrganizer(regNumber) {
+  if (!confirm('Approve this organizer request?')) return;
+  try {
+    const res = await fetch(API + '/admin/organizers/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ regNumber, decision: 'approve' })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      alert('Organizer approved');
+      renderAdminVerify();
+    } else {
+      alert('Error: ' + (data.error || 'Failed'));
+    }
+  } catch (e) {
+    alert('Network error');
+  }
+}
+
+async function adminRejectOrganizer(regNumber) {
+  const reason = prompt('Reason for rejection (optional):');
+  if (reason === null) return; // User cancelled
+  try {
+    const res = await fetch(API + '/admin/organizers/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ regNumber, decision: 'reject', reason })
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      alert('Organizer rejected');
+      renderAdminVerify();
+    } else {
+      alert('Error: ' + (data.error || 'Failed'));
+    }
+  } catch (e) {
+    alert('Network error');
+  }
+}
+
+function renderAdminYou(){ const pane=document.getElementById('admin-content'); pane.innerHTML=`<h3>Admin Settings</h3>
+  <div class="card">
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:220px;">
+        <input id="admUser" placeholder="New Username">
+        <div class="password-wrapper" style="margin-top:8px;"><input id="admPass" type="password" placeholder="New Password"><span class="password-toggle" onclick="togglePasswordVisibility('admPass')">👁️</span></div>
+        <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminSaveCreds()">Save</button><button class="btn" onclick="adminClearAll()" style="border-color:#ef4444;color:#ef4444;">Clear All Data</button></div>
+      </div>
+      <div style="flex:1; min-width:220px;">
+        <button class="btn" onclick="adminLoadStats()">Analysis</button>
+        <div id="adminStats" class="muted" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>`; }
 async function adminSaveCreds(){ const username=document.getElementById('admUser').value; const password=document.getElementById('admPass').value; const r=await fetch(API+'/admin/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Saved'); } else alert('Error: '+(d.error||'Failed')); }
+async function adminClearAll(){ if(!confirm('This will delete all users, events, media, and notifications. Continue?')) return; const r=await fetch(API+'/admin/clear-all',{method:'POST'}); const d=await r.json(); if(r.ok&&d.ok){ alert('All data cleared'); setAdminTab('users'); } else alert('Error: '+(d.error||'Failed')); }
+async function adminLoadStats(){ try{ const r=await fetch(API+'/admin/stats'); const d=await r.json(); if(r.ok&&d.ok){ document.getElementById('adminStats').textContent = `Users: ${d.totalUsers} • Organizers: ${d.totalOrganizers} • Events: ${d.totalEvents} • Active (5m): ${d.activeUsers}`; } }catch{} }
 </script>
 <script>
 function escapeHtml(s){
