@@ -28,11 +28,11 @@ const UPLOAD_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 function loadData() {
-  if (!fs.existsSync(DATA_FILE)) return { users: [], events: [], media: [], notifications: {}, messages: [] };
+  if (!fs.existsSync(DATA_FILE)) return { users: [], events: [], media: [], notifications: {}, messages: [], admin: { username: "Chopraa03", password: "Manish@2000" } };
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-    return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [] };
-  } catch { return { users: [], events: [], media: [], notifications: {}, messages: [] }; }
+    return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || { username: "Chopraa03", password: "Manish@2000" } };
+  } catch { return { users: [], events: [], media: [], notifications: {}, messages: [], admin: { username: "Chopraa03", password: "Manish@2000" } }; }
 }
 function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
@@ -49,6 +49,14 @@ app.post("/api/signup", (req, res) => {
   return res.json({ ok: true, user });
 });
 app.post("/api/login", (req, res) => { const data = loadData(); const { regNumber, password } = req.body; const user = data.users.find(u => u.regNumber === regNumber && u.password === password); if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" }); res.json({ ok: true, user }); });
+app.post("/api/admin/login", (req, res) => {
+  const data = loadData();
+  const { username, password } = req.body;
+  if (data.admin && data.admin.username === username && data.admin.password === password) {
+    return res.json({ ok: true });
+  }
+  return res.status(401).json({ ok: false, error: "Invalid admin credentials" });
+});
 app.post("/api/reset-password", (req, res) => {
   const data = loadData(); const { regNumber, role, newPassword } = req.body;
   const user = data.users.find(u => u.regNumber === regNumber && u.role === role);
@@ -58,6 +66,46 @@ app.post("/api/reset-password", (req, res) => {
   saveData(data); res.json({ ok: true });
 });
 app.get("/api/users/:regNumber", (req, res) => { const data = loadData(); const user = data.users.find(u => u.regNumber === req.params.regNumber); if (!user) { return res.status(404).json({ ok: false, error: "User not found" }); } const { password, ...userProfile } = user; res.json({ ok: true, user: userProfile }); });
+// Admin list endpoints
+app.get('/api/admin/users', (req, res) => { const data = loadData(); const students = data.users.filter(u => u.role === 'STUDENT'); res.json({ ok: true, users: students }); });
+app.get('/api/admin/organizers', (req, res) => { const data = loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
+// Admin remove organizer ownership -> set role to STUDENT
+app.post('/api/admin/organizers/remove', (req, res) => {
+  const data = loadData();
+  const { regNumber } = req.body;
+  const u = data.users.find(x=>x.regNumber===regNumber);
+  if(!u) return res.status(404).json({ ok:false, error:'User not found' });
+  u.role='STUDENT';
+  if(!data.notifications) data.notifications = {};
+  if(!data.notifications[regNumber]) data.notifications[regNumber] = [];
+  data.notifications[regNumber].unshift({ msg: "⚠️ Your organizer role has been removed by admin. You now have student access.", time: new Date().toISOString(), read: false });
+  saveData(data);
+  res.json({ ok:true });
+});
+// Admin delete student account (hard delete)
+app.post('/api/admin/users/delete', (req, res) => { const data = loadData(); const { regNumber } = req.body; const idx = data.users.findIndex(x=>x.regNumber===regNumber); if(idx===-1) return res.status(404).json({ ok:false, error:'User not found' }); data.users.splice(idx,1); saveData(data); res.json({ ok:true }); });
+// Admin events list
+app.get('/api/admin/events', (req, res) => { const data = loadData(); res.json({ ok:true, events: data.events }); });
+// Admin delete event with reason
+app.post('/api/admin/events/delete', (req,res)=>{ const data = loadData(); const { eventId, reason } = req.body; const i = data.events.findIndex(e=>e.id===Number(eventId)); if(i===-1) return res.status(404).json({ ok:false, error:'Event not found' }); const ev = data.events[i]; // delete media files
+  const mediaToDelete = data.media.filter(m=>m.eventId===ev.id);
+  mediaToDelete.forEach(m=>{ try{ const fp = path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{} });
+  data.media = data.media.filter(m=>m.eventId!==ev.id);
+  // notify organizer
+  if(!data.notifications) data.notifications={}; if(!data.notifications[ev.creatorRegNumber]) data.notifications[ev.creatorRegNumber]=[];
+  data.notifications[ev.creatorRegNumber].unshift({ msg:`❌ Your event '${ev.title}' was deleted by admin.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false });
+  data.events.splice(i,1); saveData(data); res.json({ ok:true }); });
+// Admin media list per event
+app.get('/api/admin/media/:eventId', (req,res)=>{ const data=loadData(); const id=Number(req.params.eventId); res.json({ ok:true, media: data.media.filter(m=>m.eventId===id) }); });
+// Admin delete media item
+app.post('/api/admin/media/delete', (req,res)=>{ const data=loadData(); const { mediaId } = req.body; const i = data.media.findIndex(m=>m.id===Number(mediaId)); if(i===-1) return res.status(404).json({ ok:false, error:'Media not found' }); const m = data.media[i]; const ev = data.events.find(e=>e.id===m.eventId);
+  try{ const fp=path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{};
+  data.media.splice(i,1);
+  if(ev){ if(!data.notifications) data.notifications={}; if(!data.notifications[ev.creatorRegNumber]) data.notifications[ev.creatorRegNumber]=[]; data.notifications[ev.creatorRegNumber].unshift({ msg:`🗑️ Admin deleted a media item from '${ev.title}'.`, time:new Date().toISOString(), read:false }); }
+  saveData(data); res.json({ ok:true }); });
+
+// Admin change credentials
+app.post('/api/admin/credentials', (req,res)=>{ const data=loadData(); const { username, password } = req.body; if(!username || !password){ return res.status(400).json({ ok:false, error:'Missing fields' }); } data.admin = { username, password }; saveData(data); res.json({ ok:true }); });
 
 app.post("/api/events", (req, res) => {
   const data = loadData();

@@ -64,38 +64,6 @@
   ],
   "events": [
     {
-      "id": 1760087132558,
-      "title": "Web-D",
-      "date": "2025-10-11",
-      "time": "16:00",
-      "venue": "LH-A",
-      "capacity": 20,
-      "taken": 3,
-      "bookings": [
-        {
-          "regNumber": "2440014",
-          "name": "Manish",
-          "seat": 1,
-          "role": "S",
-          "eventId": 1760087132558
-        },
-        {
-          "regNumber": "2440016",
-          "name": "Priyanshu",
-          "seat": 2,
-          "role": "O",
-          "eventId": 1760087132558
-        },
-        {
-          "regNumber": "2440015",
-          "name": "abhishek",
-          "seat": 3,
-          "role": "O",
-          "eventId": 1760087132558
-        }
-      ]
-    },
-    {
       "id": 1760118090880,
       "title": "AI",
       "date": "2025-10-11",

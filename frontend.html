@@ -226,13 +226,15 @@ function showTab(tab) {
 }
 function renderTabs() {
     const tabs = document.getElementById("tabs");
-    if (!currentUser) return void(tabs.style.display = "none");
+    if (!tabs) return;
+    const isAdmin = !!window.__isAdmin;
     tabs.innerHTML = `
     <div class="tab" data-tab="home" onclick="showTab('home')">Home</div>
     <div class="tab" data-tab="tickets" onclick="showTab('tickets')">Tickets</div>
     <div class="tab" data-tab="media" onclick="showTab('media')">Media</div>
     <div class="tab" data-tab="🔔" onclick="showTab('notifications')">🔔</div>
-    ${currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : ""}
+    ${currentUser && currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : ""}
+    ${isAdmin ? `<div class="tab" data-tab="admin" onclick="showTab('admin')">Admin</div>` : ""}
     <div class="tab" data-tab="profile" onclick="showTab('profile')">You</div>`;
 }
 function render() {
@@ -634,8 +636,26 @@ async function renderMedia() {
 
 // ---------- Auth ----------
 function showAuth() { showTab('auth'); }
+// Persist ?api= param to localStorage for subsequent loads
+try{
+    (function(){
+        const p = new URLSearchParams(location.search);
+        const api = p.get('api');
+        if(api){ localStorage.setItem('API_BASE', api); }
+    })();
+}catch{}
+
+// If opened via QR link, show a minimal standalone QR landing flow
+try{
+    (function(){
+        const p = new URLSearchParams(location.search);
+        const qr = p.get('qr_e');
+        if(qr){ setTimeout(()=>renderQrLanding(Number(qr)), 0); }
+    })();
+}catch{}
 function showLogin() {
     const s = document.getElementById("screen-login");
+    const hasQr = (()=>{ try{ return new URLSearchParams(location.search).has('qr_e'); }catch{ return false; } })();
     s.innerHTML = `
     <div>
         <h2 style="font-size: 2rem;">Login</h2>
@@ -654,12 +674,137 @@ function showLogin() {
             <label for="rememberMe" class="checkbox-label">Keep me logged in</label>
         </div>
         <button class="btn primary" onclick="doLogin()">Login</button>
-        <button class="btn" onclick="doQrVerifyIfPresent()">Verify QR</button>
+        ${hasQr ? `<button class="btn" onclick="doQrVerifyIfPresent()">Verify QR</button>` : ''}
         <button class="btn" onclick="showSignup()">Sign Up</button>
         <button class="btn muted" onclick="showForgotPassword()">Forgot Password?</button>
         <div id="loginMsg" class="muted"></div>
     </div>`;
     showTab('login');
+}
+
+// --------- QR Standalone Landing (no full app UI) ---------
+async function renderQrLanding(eventId){
+    try{
+        const modal = document.getElementById('modal');
+        const body = document.getElementById('modal-body');
+        body.innerHTML = `
+          <h3>Verify to Book</h3>
+          <div class="muted">Enter your Registration Number and Password to continue.</div>
+          <input id="qrReg" placeholder="Registration Number" style="margin-top:10px;">
+          <div class="password-wrapper" style="margin-top:8px;">
+            <input id="qrPass" type="password" placeholder="Password">
+            <span class="password-toggle" onclick="togglePasswordVisibility('qrPass')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path class="eye-open-path" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle class="eye-open-path" cx="12" cy="12" r="3"></circle>
+                <path class="eye-closed-path" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line class="eye-closed-path" x1="1" y1="1" x2="23" y2="23"></line>
+              </svg>
+            </span>
+          </div>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button class="btn primary" onclick="qrVerifyAndShow(${eventId})" style="flex:1;">Verify</button>
+          </div>
+          <div id="qrMsg" class="muted" style="margin-top:8px;"></div>
+        `;
+        modal.style.display = 'flex';
+    }catch{}
+}
+
+async function qrVerifyAndShow(eventId){
+    const regNumber = document.getElementById('qrReg').value;
+    const password = document.getElementById('qrPass').value;
+    const msg = document.getElementById('qrMsg');
+    msg.textContent = '⏳ Verifying...';
+    try{
+        const res = await fetch(API+"/login", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ regNumber, password }) });
+        const data = await res.json();
+        if(!(res.ok && data.ok)){ msg.textContent = '❌ Invalid credentials'; return; }
+        const evRes = await fetch(API+"/events");
+        const evData = await evRes.json();
+        const ev = (evData.events||[]).find(e=>e.id===Number(eventId));
+        if(!ev){ msg.textContent = '❌ Event not found.'; return; }
+        const body = document.getElementById('modal-body');
+        const isOrganizer = ev.creatorRegNumber && data.user && (ev.creatorRegNumber === data.user.regNumber);
+        const isVolunteer = Array.isArray(ev.volunteers) && ev.volunteers.some(v=>v.regNumber===data.user.regNumber);
+        if(isOrganizer){
+            body.innerHTML = `
+              <h3>${capitalizeWords(ev.title)} <span class="muted" style="font-size:0.9rem">• Your Event</span></h3>
+              <div class="kv">
+                <b>Date:</b> <span class="value">${ev.date}</span>
+                <b>Time:</b> <span class="value">${ev.time}</span>
+                <b>Venue:</b> <span class="value">${capitalizeWords(ev.venue)}</span>
+                <b>Seats:</b> <span class="value">${ev.taken}/${ev.capacity}</span>
+              </div>
+              <div class="muted" style="margin-top:10px;">Organizers cannot book tickets for their own events.</div>
+            `;
+        } else if (isVolunteer){
+            const myVol = (ev.volunteers||[]).find(v=>v.regNumber===data.user.regNumber) || {};
+            body.innerHTML = `
+              <h3>${capitalizeWords(ev.title)} <span class="muted" style="font-size:0.9rem">• Volunteer</span></h3>
+              <div class="kv">
+                <b>Date:</b> <span class="value">${ev.date}</span>
+                <b>Time:</b> <span class="value">${ev.time}</span>
+                <b>Venue:</b> <span class="value">${capitalizeWords(ev.venue)}</span>
+                <b>Role:</b> <span class="value">${capitalizeWords(myVol.role||'Volunteer')}</span>
+              </div>
+              <div class="muted" style="margin-top:10px;">Volunteers cannot book tickets for this event.</div>
+            `;
+        } else {
+            const already = Array.isArray(ev.bookings) && ev.bookings.find(b=>b.regNumber===regNumber);
+            if(already){
+                body.innerHTML = `
+                  <h3>${capitalizeWords(ev.title)}</h3>
+                  <div class="kv">
+                    <b>Date:</b> <span class="value">${ev.date}</span>
+                    <b>Time:</b> <span class="value">${ev.time}</span>
+                    <b>Venue:</b> <span class="value">${capitalizeWords(ev.venue)}</span>
+                    <b>Seat:</b> <span class="value">${already.seat}</span>
+                  </div>
+                  <div class="muted" style="margin-top:10px;">You already have a ticket for this event.</div>
+                  <div style="display:flex; gap:8px; margin-top:12px;">
+                    <button class="btn" onclick="showQrTicketDetail(${ev.id}, '${regNumber}')" style="flex:1;">View Ticket</button>
+                  </div>
+                `;
+            } else {
+                body.innerHTML = `
+                  <h3>${capitalizeWords(ev.title)}</h3>
+                  <div class="kv">
+                    <b>Date:</b> <span class="value">${ev.date}</span>
+                    <b>Time:</b> <span class="value">${ev.time}</span>
+                    <b>Venue:</b> <span class="value">${capitalizeWords(ev.venue)}</span>
+                    <b>Seats:</b> <span class="value">${ev.taken}/${ev.capacity}</span>
+                  </div>
+                  <div style="display:flex; gap:8px; margin-top:12px;">
+                    <button class="btn primary" onclick="bookTicketViaQrAs(${ev.id}, '${regNumber}')" style="flex:1;">Book Ticket</button>
+                  </div>
+                `;
+            }
+        }
+    }catch(err){ msg.textContent = '❌ Network error'; }
+}
+
+async function showQrTicketDetail(eventId, regNumber){
+    try{
+        const res = await fetch(API+"/tickets/"+regNumber);
+        const data = await res.json();
+        if(!(res.ok && data.ok)) return;
+        const t = (data.tickets||[]).find(x=>x.eventId===Number(eventId) && !x.waiting);
+        if(t){ showTicketDetail(t); }
+    }catch{}
+}
+
+async function bookTicketViaQrAs(eventId, regNumber){
+    try{
+        const res = await fetch(API+"/tickets",{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ eventId, regNumber, via:'qr' })});
+        const data = await res.json();
+        if(res.ok && data.ok){
+            const body = document.getElementById('modal-body');
+            const bookedAt = new Date(data.booking.bookedAt).toLocaleString();
+            body.innerHTML = `<h3>🎟️ Booked</h3><div class="muted">Ticket booked using QR code at ${bookedAt}.</div>
+            <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn" onclick="showQrTicketDetail(${eventId}, '${regNumber}')" style="flex:1;">View Ticket</button></div>`;
+        } else {
+            alert('❌ '+(data.error||'Booking failed'));
+        }
+    }catch{ alert('Network error'); }
 }
 // If a qr_e param is present, this verifies and shows minimal UI only after login
 async function doQrVerifyIfPresent(){
@@ -705,12 +850,16 @@ async function handleQrFlowAfterLogin(eventId){
 }
 
 function openQrModal(eventId){
-    // Render a QR containing the landing link with qr_e param
-    const link = `${location.origin}${location.pathname}?qr_e=${eventId}`;
+    // Render a QR containing the landing link with qr_e param, preserving ?api if present
+    const params = new URLSearchParams(location.search);
+    const apiParam = params.get('api');
+    params.set('qr_e', String(eventId));
+    if (apiParam) params.set('api', apiParam);
+    const qs = params.toString();
+    const link = `${location.origin}${location.pathname}${qs ? ('?' + qs) : ''}`;
     const body = document.getElementById('modal-body');
     body.innerHTML = `<h3>Scan to Book</h3>
-      <div id="qrCanvas" style="display:flex;justify-content:center;align-items:center;height:240px"></div>
-      <div class="muted" style="margin-top:8px;word-break:break-all;">${link}</div>`;
+      <div id="qrCanvas" style="display:flex;justify-content:center;align-items:center;height:260px"></div>`;
     document.getElementById('modal').style.display='flex';
     // Lightweight inline QR generator (no external deps): use simple canvas squares
     try { generateQr(link, 'qrCanvas'); } catch {}
@@ -719,10 +868,11 @@ function openQrModal(eventId){
 // Tiny QR generator (fallback pattern for short URLs). For reliability in production, replace with a QR library.
 function generateQr(text, containerId){
     // Use a dynamic import of Google Chart API as an image fallback for simplicity
-    const url = 'https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl='+encodeURIComponent(text);
+    const url = 'https://chart.googleapis.com/chart?cht=qr&chs=240x240&chl='+encodeURIComponent(text);
     const div = document.getElementById(containerId);
     if(!div) return;
-    div.innerHTML = `<img src="${url}" alt="QR Code" width="220" height="220" style="background:#fff;padding:8px;border-radius:6px;">`;
+    const fallback = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(text);
+    div.innerHTML = `<img src="${url}" alt="QR Code" width="240" height="240" referrerpolicy="no-referrer" style="background:#fff;padding:8px;border-radius:6px;" onerror="this.onerror=null;this.src='${fallback}';">`;
 }
 function showSignup() {
     const s = document.getElementById("screen-signup");
@@ -2128,11 +2278,12 @@ async function showMapModal(venue) {
         <div style="padding: 12px 16px 12px 80px; background:#2a2a2a; border-bottom:1px solid #333; display:flex; align-items:center; justify-content:center; position:relative; z-index:2; text-align:center;">
             <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:80%">
                 <div style="font-weight:bold; color:#7c3aed; font-size:1.05rem;">📍 ${venue}</div>
-                <div class="muted" style="font-size:0.9rem; color:#a1a1aa;">NITK Surathkal</div>
+                <div class="muted" style="font-size:0.9rem; color:#a1a1aa;">NITK Surathkal • <span id="etaHeader"></span></div>
             </div>
         </div>
         <div id="gmaps" style="flex:1"></div>
         <div style="padding:10px; background:#2a2a2a; border-top:1px solid #333; display:flex; gap:10px">
+            <button id="routeBtn" class="btn" style="flex:1; opacity:0.6; pointer-events:none;" onclick="drawRouteOnMap()">🧭 Show Route</button>
             <button class="btn" style="flex:1" onclick="openExternalNavFromMap()">🗺️ Get Directions</button>
         </div>
     </div>`;
@@ -2200,10 +2351,13 @@ function initLiveMap(targetLatLng, venueName){
             bounds.extend(new google.maps.LatLng(lastUserLatLng.lat, lastUserLatLng.lng));
             gmap.fitBounds(bounds);
         } catch {}
+        try{ const b=document.getElementById('routeBtn'); if(b) { b.style.opacity='1'; b.style.pointerEvents='auto'; } }catch{}
     }
     // Ensure map lays out correctly after modal open
     try { setTimeout(() => { if (gmap) { google.maps.event.trigger(gmap, 'resize'); gmap.setCenter(targetLatLng); } }, 50); } catch {}
-    directionsService = null; directionsRenderer = null; // removed live route rendering
+    directionsService = new google.maps.DirectionsService();
+    directionsRenderer = new google.maps.DirectionsRenderer({ suppressMarkers: true, polylineOptions: { strokeColor: '#ef4444', strokeWeight: 5 } });
+    directionsRenderer.setMap(gmap);
     if (navigator.geolocation) {
         // Place an initial user marker as soon as we have a position
         try {
@@ -2223,6 +2377,7 @@ function initLiveMap(targetLatLng, venueName){
                     bounds.extend(new google.maps.LatLng(p.lat, p.lng));
                     gmap.fitBounds(bounds);
                 } catch {}
+                try{ const b=document.getElementById('routeBtn'); if(b) { b.style.opacity='1'; b.style.pointerEvents='auto'; } }catch{}
             }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 });
         } catch {}
         watchId = navigator.geolocation.watchPosition(pos => {
@@ -2242,14 +2397,114 @@ function initLiveMap(targetLatLng, venueName){
 }
 
 function recenterMap(){ if (gmap && userMarker) gmap.panTo(userMarker.getPosition()); }
-// live route removed; we only show user + venue markers
-function routeToVenue(){ /* removed */ }
-let activePolyline = null;
+async function drawRouteOnMap(){
+    try{
+        if(!gmap || !lastVenueLatLng){ return; }
+        if(!lastUserLatLng){
+            // try get current position before routing
+            await new Promise((resolve)=>{
+                if(!navigator.geolocation) return resolve();
+                navigator.geolocation.getCurrentPosition(pos=>{ lastUserLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude }; resolve(); }, ()=>resolve(), { enableHighAccuracy:true, timeout:8000, maximumAge:15000 });
+            });
+        }
+        if(!lastUserLatLng){ return; }
+        const origin = new google.maps.LatLng(lastUserLatLng.lat, lastUserLatLng.lng);
+        const destination = new google.maps.LatLng(lastVenueLatLng.lat, lastVenueLatLng.lng);
+        // request driving and walking routes in parallel
+        let bikeDir, walkDir;
+        try {
+            [bikeDir, walkDir] = await Promise.all([
+                directionsService.route({ origin, destination, travelMode: google.maps.TravelMode.BICYCLING }),
+                directionsService.route({ origin, destination, travelMode: google.maps.TravelMode.WALKING })
+            ]);
+        } catch (e) {
+            // Fallback if bicycling directions not available: use driving for polyline
+            try { bikeDir = await directionsService.route({ origin, destination, travelMode: google.maps.TravelMode.DRIVING }); } catch {}
+            try { if (!walkDir) walkDir = await directionsService.route({ origin, destination, travelMode: google.maps.TravelMode.WALKING }); } catch {}
+        }
+        // draw red line using bike route as default
+        directionsRenderer.setDirections(bikeDir);
+        // Immediately show Walk ETA and distance from available directions as a baseline
+        try{
+            const header = document.getElementById('etaHeader');
+            const wLeg0 = walkDir?.routes?.[0]?.legs?.[0];
+            const bLeg0 = bikeDir?.routes?.[0]?.legs?.[0];
+            const distText = (bLeg0?.distance?.text) || (wLeg0?.distance?.text) || '';
+            if(header && (wLeg0?.duration?.text || distText)){
+                const wTxt = wLeg0?.duration?.text || '';
+                header.textContent = `${wTxt ? ('Walk: '+wTxt) : ''}${distText ? (wTxt? ' • ' : '') + 'Dist: '+distText : ''}`;
+            }
+        }catch{}
+        // Fetch ETAs with Distance Matrix for accuracy and reliability
+        try{
+            const svc = new google.maps.DistanceMatrixService();
+            const [bikeEta, walkEta] = await Promise.all([
+                new Promise(async (resolve)=>{
+                    try{
+                        svc.getDistanceMatrix({ origins:[origin], destinations:[destination], travelMode: google.maps.TravelMode.BICYCLING }, (res, status)=>{
+                            try{ if(status==='OK'){ const e = res.rows[0].elements[0]; if(e && e.duration?.text) return resolve(e.duration.text); } }catch{}
+                            // Fallback to driving as a proxy if bicycling unavailable
+                            svc.getDistanceMatrix({ origins:[origin], destinations:[destination], travelMode: google.maps.TravelMode.DRIVING, drivingOptions:{ departureTime: new Date(), trafficModel:'bestguess' } }, (r2, st2)=>{
+                                try{ if(st2==='OK'){ const e2 = r2.rows[0].elements[0]; return resolve(e2.duration_in_traffic?.text || e2.duration?.text || 'N/A'); } }catch{}
+                                // Final fallback: use directions leg duration from bike/driving polyline
+                                try{ const leg = (bikeDir||{}).routes?.[0]?.legs?.[0]; return resolve(leg?.duration?.text || 'N/A'); }catch{ return resolve('N/A'); }
+                            });
+                        });
+                    }catch{ resolve('N/A'); }
+                }),
+                new Promise(resolve=>svc.getDistanceMatrix({ origins:[origin], destinations:[destination], travelMode: google.maps.TravelMode.WALKING }, (res, status)=>{
+                    try{ if(status==='OK'){ const e = res.rows[0].elements[0]; if(e && e.duration?.text) return resolve(e.duration.text); } }catch{}
+                    // Fallback to already-fetched walking directions or approximate from distance
+                    try{ const leg = walkDir.routes[0].legs[0]; if(leg?.duration?.text) return resolve(leg.duration.text); const meters = leg?.distance?.value; if(meters){ const mins = Math.round((meters/1.4)/60); return resolve(mins+" min"); } }catch{}
+                    return resolve('N/A');
+                }))
+            ]);
+            const header = document.getElementById('etaHeader');
+            const distLeg = bikeDir?.routes?.[0]?.legs?.[0] || walkDir?.routes?.[0]?.legs?.[0];
+            const distText = distLeg?.distance?.text || '';
+            if(header){ header.textContent = `Bike: ${bikeEta || 'N/A'} • Walk: ${walkEta || 'N/A'}${distText? ' • Dist: '+distText:''}`; }
+        }catch{}
+        // fit bounds around the route
+        try{
+            const bounds = new google.maps.LatLngBounds();
+            bikeDir.routes[0].overview_path.forEach(p=>bounds.extend(p));
+            gmap.fitBounds(bounds);
+        }catch{}
+        // Show distance label near the middle of the route
+        try{
+            const path = bikeDir.routes[0].overview_path;
+            const mid = path[Math.floor(path.length/2)];
+            const leg = bikeDir.routes[0].legs[0];
+            const distText = leg?.distance?.text;
+            if(distText){
+                const infowin = new google.maps.InfoWindow({ content: `<div style="padding:4px 8px; font-size:12px; color:#111;">Dist: ${distText}</div>`, position: mid });
+                infowin.open({ map: gmap });
+                setTimeout(()=>{ try{ infowin.close(); }catch{} }, 8000);
+            }
+        }catch{}
+    }catch(err){ /* silently ignore */ }
+}
 function toLatLngLiteral(p){ if (!p) return null; if (typeof p.lat === 'function') { return { lat: p.lat(), lng: p.lng() }; } if ('lat' in p && 'lng' in p) return p; return null; }
 function drawPolylineRoute(){ /* removed */ }
 
 // computeETAs removed per request
-function openExternalNavFromMap(){ if (!lastVenueLatLng) return; const {lat,lng} = lastVenueLatLng; const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`; window.location.href = url; }
+async function openExternalNavFromMap(){
+    if (!lastVenueLatLng) return;
+    const {lat: dlat, lng: dlng} = lastVenueLatLng;
+    let originParam = '';
+    try{
+        if(lastUserLatLng && typeof lastUserLatLng.lat === 'number' && typeof lastUserLatLng.lng === 'number'){
+            originParam = `&origin=${lastUserLatLng.lat},${lastUserLatLng.lng}`;
+        } else if (navigator.geolocation) {
+            await new Promise((resolve)=>{
+                navigator.geolocation.getCurrentPosition(pos=>{ lastUserLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude }; resolve(); }, ()=>resolve(), { enableHighAccuracy:true, timeout:5000, maximumAge:15000 });
+            });
+            if(lastUserLatLng) originParam = `&origin=${lastUserLatLng.lat},${lastUserLatLng.lng}`;
+        }
+    }catch{}
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${dlat},${dlng}${originParam}`;
+    window.open(url, '_blank', 'noopener');
+}
 
 function showIframeFallback(venue, target){
     const mapContainer = document.getElementById('gmaps');
@@ -2402,6 +2657,120 @@ function showWelcomeBanner(message){
 
 // Initialize app - check for saved login or show auth
 checkSavedLogin();
+
+// Show admin login CTA on welcome screen
+function renderWelcome() {
+    const c = document.getElementById("screen-home");
+    c.innerHTML = `
+      <div style="text-align:center; padding:30px;">
+        <h2>Welcome to Pulse</h2>
+        <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
+          <button class="btn primary" onclick="showLogin()">Login</button>
+          <button class="btn" onclick="showSignup()">Signup</button>
+          <button class="btn" onclick="showAdminLogin()">Admin Login</button>
+        </div>
+      </div>`;
+}
+
+function showAdminLogin(){
+    const s = document.getElementById("screen-login");
+    s.innerHTML = `
+      <h2>Admin Login</h2>
+      <input id="adminUser" placeholder="Username" value="">
+      <div class="password-wrapper"><input id="adminPass" type="password" placeholder="Password">
+        <span class="password-toggle" onclick="togglePasswordVisibility('adminPass')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path class="eye-open-path" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle class="eye-open-path" cx="12" cy="12" r="3"></circle>
+            <path class="eye-closed-path" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line class="eye-closed-path" x1="1" y1="1" x2="23" y2="23"></line>
+          </svg>
+        </span>
+      </div>
+      <button class="btn primary" onclick="doAdminLogin()">Login</button>
+      <div id="adminMsg" class="muted"></div>`;
+    showTab('login');
+}
+async function doAdminLogin(){
+    const username = document.getElementById('adminUser').value;
+    const password = document.getElementById('adminPass').value;
+    const msg = document.getElementById('adminMsg'); msg.textContent='⏳ Logging in...';
+    try{
+        const res = await fetch(API+"/admin/login", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
+        const data = await res.json();
+        if(res.ok && data.ok){ window.__isAdmin = true; msg.textContent='✅ Admin logged in'; renderTabs(); showTab('admin'); renderAdmin(); }
+        else { msg.textContent='❌ '+(data.error||'Login failed'); }
+    }catch{ msg.textContent='❌ Network error'; }
+}
+function adminLogout(){ window.__isAdmin=false; renderTabs(); showTab('home'); }
+
+function renderAdmin(){
+    const c = document.getElementById('screen-admin');
+    if(!c){ const root=document.createElement('div'); root.id='screen-admin'; root.className='content'; document.getElementById('app').appendChild(root); }
+    const el = document.getElementById('screen-admin');
+    el.innerHTML = `
+      <h2>Admin</h2>
+      <div class="sub-nav">
+        <button class="sub-nav-btn" onclick="renderAdminUsers('students')">Users</button>
+        <button class="sub-nav-btn" onclick="renderAdminMedia()">Media</button>
+        <button class="sub-nav-btn" onclick="renderAdminEvents()">Events</button>
+        <button class="sub-nav-btn" onclick="renderAdminYou()">You</button>
+      </div>
+      <div id="admin-content"></div>`;
+    renderAdminUsers('students');
+}
+async function renderAdminUsers(which){
+    const pane = document.getElementById('admin-content');
+    const isStudents = which==='students';
+    const url = isStudents ? '/admin/users' : '/admin/organizers';
+    const res = await fetch(API+url);
+    const data = await res.json();
+    const list = (data.users||[]);
+    pane.innerHTML = `<div class="sub-nav" style="margin-bottom:10px;">
+       <button class="sub-nav-btn ${isStudents?'active':''}" onclick="renderAdminUsers('students')">Students</button>
+       <button class="sub-nav-btn ${!isStudents?'active':''}" onclick="renderAdminUsers('organizers')">Organizers</button>
+     </div>
+     <div>${list.map(u=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div><b>${capitalizeWords(u.name||'')} ${capitalizeWords(u.surname||'')}</b><div class="muted">${u.regNumber} • ${u.role}</div></div>
+        <div style="display:flex; gap:8px;">
+          ${isStudents? `<button class="btn" onclick="adminDeleteStudent('${u.regNumber}')">Delete</button>`: `<button class="btn" onclick="adminRemoveOrganizer('${u.regNumber}')">Remove Ownership</button>`}
+        </div>
+     </div>`).join('')||'<p class="muted">No records.</p>'}</div>`;
+}
+async function adminRemoveOrganizer(reg){ if(!confirm('Remove organizer ownership?')) return; const r=await fetch(API+'/admin/organizers/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({regNumber:reg})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Removed'); renderAdminUsers('organizers'); renderAdminUsers('students'); } else alert('Error: '+(d.error||'Failed')); }
+async function adminDeleteStudent(reg){ if(!confirm('Delete this student account?')) return; const r=await fetch(API+'/admin/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({regNumber:reg})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Deleted'); renderAdminUsers('students'); } else alert('Error: '+(d.error||'Failed')); }
+
+async function renderAdminMedia(){
+    const pane = document.getElementById('admin-content');
+    const evRes = await fetch(API+'/admin/events'); const evData = await evRes.json(); const events = evData.events||[];
+    pane.innerHTML = `<h3>Media (by Event)</h3>
+      ${events.map(e=>`<div class="card"><b>${capitalizeWords(e.title)}</b> • ${e.date}
+        <div style="margin-top:8px;"><button class="btn" onclick="adminOpenEventMedia(${e.id})">Open Media</button></div></div>`).join('')||'<p class="muted">No events.</p>'}`;
+}
+async function adminOpenEventMedia(eventId){
+    const r = await fetch(API+'/admin/media/'+eventId); const d = await r.json();
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `<h3>Event Media</h3>
+      ${(d.media||[]).map(m=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div>${m.type==='photo'? '🖼️':'🎬'} ${m.name}</div>
+        <div><button class="btn" onclick="adminDeleteMedia(${m.id})">Delete</button></div>
+      </div>`).join('')||'<p class="muted">No media.</p>'}`;
+    document.getElementById('modal').style.display='flex';
+}
+async function adminDeleteMedia(id){ if(!confirm('Delete this media?')) return; const r=await fetch(API+'/admin/media/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mediaId:id})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Deleted'); closeModal(); renderAdminMedia(); } else alert('Error: '+(d.error||'Failed')); }
+
+async function renderAdminEvents(){
+    const pane = document.getElementById('admin-content'); const r=await fetch(API+'/admin/events'); const d=await r.json(); const list=d.events||[];
+    pane.innerHTML = `<h3>Events</h3>
+      ${list.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+        <div><b>${capitalizeWords(e.title)}</b> • ${e.date} ${e.time} • ${capitalizeWords(e.venue)}</div>
+        <div style="display:flex;gap:8px;"><button class="btn" onclick="adminOpenEvent(${e.id})">View</button><button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')">Delete</button></div>
+      </div>`).join('')||'<p class="muted">No events.</p>'}`;
+}
+async function adminOpenEvent(eventId){ const events=(await (await fetch(API+'/admin/events')).json()).events||[]; const ev=events.find(x=>x.id===Number(eventId)); const body=document.getElementById('modal-body'); if(!ev){return} body.innerHTML=`<h3>${capitalizeWords(ev.title)}</h3><div class="kv"><b>Organizer:</b> <span class="value">${ev.creatorRegNumber||'-'}</span><b>Date:</b><span class="value">${ev.date}</span><b>Time:</b><span class="value">${ev.time}</span><b>Venue:</b><span class="value">${capitalizeWords(ev.venue)}</span><b>Capacity:</b><span class="value">${ev.capacity}</span><b>Taken:</b><span class="value">${ev.taken}</span></div>`; document.getElementById('modal').style.display='flex'; }
+function adminDeleteEventPrompt(id, title){ const body=document.getElementById('modal-body'); body.innerHTML=`<h3>Delete Event</h3><div class="muted">${title}</div><textarea id="adminReason" placeholder="Reason (optional)" style="width:100%;height:90px;margin-top:8px;"></textarea><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminDeleteEvent(${id})">Send</button><button class="btn" onclick="closeModal()">Cancel</button></div>`; document.getElementById('modal').style.display='flex'; }
+async function adminDeleteEvent(id){ const reason=document.getElementById('adminReason').value||''; const r=await fetch(API+'/admin/events/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventId:id, reason})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Event deleted'); closeModal(); renderAdminEvents(); } else alert('Error: '+(d.error||'Failed')); }
+
+function renderAdminYou(){ const pane=document.getElementById('admin-content'); pane.innerHTML=`<h3>Admin Settings</h3><div class="card"><input id="admUser" placeholder="New Username"><div class="password-wrapper" style="margin-top:8px;"><input id="admPass" type="password" placeholder="New Password"><span class="password-toggle" onclick="togglePasswordVisibility('admPass')">👁️</span></div><div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminSaveCreds()">Save</button><button class="btn" onclick="adminLogout()">Logout</button></div></div>`; }
+async function adminSaveCreds(){ const username=document.getElementById('admUser').value; const password=document.getElementById('admPass').value; const r=await fetch(API+'/admin/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Saved'); } else alert('Error: '+(d.error||'Failed')); }
 </script>
 <script>
 function escapeHtml(s){
