@@ -205,7 +205,7 @@ function checkSavedLogin() {
 function showTab(tab) {
     document.querySelectorAll(".content").forEach(c => c.style.display = "none");
     const tabsContainer = document.getElementById("tabs");
-    if (["home", "tickets", "media", "organizer", "notifications", "profile"].includes(tab)) {
+    if (["home", "tickets", "media", "organizer", "notifications", "profile", "admin"].includes(tab)) {
         tabsContainer.style.display = "flex";
         tabsContainer.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
         const tabName = tab === 'notifications' ? '🔔' : tab;
@@ -221,20 +221,24 @@ function showTab(tab) {
     }
     if (tab === 'notifications') { document.getElementById('notificationTicker').style.display = 'none'; } else { pollNotifications(); }
     if (tab === "home") renderEvents(); if (tab === "tickets") renderTickets(); if (tab === "media") renderMedia();
-    if (tab === "notifications") renderNotifications(); if (tab === "organizer") renderOrganizer(); if (tab === "profile") renderProfile();
+    if (tab === "notifications") renderNotifications(); if (tab === "organizer") renderOrganizer(); if (tab === "profile") renderProfile(); if (tab === 'admin') renderAdmin();
     render();
 }
 function renderTabs() {
     const tabs = document.getElementById("tabs");
     if (!tabs) return;
     const isAdmin = !!window.__isAdmin;
+    if (isAdmin) {
+        tabs.innerHTML = `
+        <div class="tab" data-tab="admin" onclick="showTab('admin')">Admin</div>`;
+        return;
+    }
     tabs.innerHTML = `
     <div class="tab" data-tab="home" onclick="showTab('home')">Home</div>
     <div class="tab" data-tab="tickets" onclick="showTab('tickets')">Tickets</div>
     <div class="tab" data-tab="media" onclick="showTab('media')">Media</div>
     <div class="tab" data-tab="🔔" onclick="showTab('notifications')">🔔</div>
     ${currentUser && currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : ""}
-    ${isAdmin ? `<div class="tab" data-tab="admin" onclick="showTab('admin')">Admin</div>` : ""}
     <div class="tab" data-tab="profile" onclick="showTab('profile')">You</div>`;
 }
 function render() {
@@ -676,6 +680,7 @@ function showLogin() {
         <button class="btn primary" onclick="doLogin()">Login</button>
         ${hasQr ? `<button class="btn" onclick="doQrVerifyIfPresent()">Verify QR</button>` : ''}
         <button class="btn" onclick="showSignup()">Sign Up</button>
+        <button class="btn" onclick="showAdminLogin()">Admin Login</button>
         <button class="btn muted" onclick="showForgotPassword()">Forgot Password?</button>
         <div id="loginMsg" class="muted"></div>
     </div>`;
@@ -2667,7 +2672,6 @@ function renderWelcome() {
         <div style="display:flex; gap:10px; justify-content:center; margin-top:10px;">
           <button class="btn primary" onclick="showLogin()">Login</button>
           <button class="btn" onclick="showSignup()">Signup</button>
-          <button class="btn" onclick="showAdminLogin()">Admin Login</button>
         </div>
       </div>`;
 }
@@ -2678,17 +2682,13 @@ function showAdminLogin(){
       <h2>Admin Login</h2>
       <input id="adminUser" placeholder="Username" value="">
       <div class="password-wrapper"><input id="adminPass" type="password" placeholder="Password">
-        <span class="password-toggle" onclick="togglePasswordVisibility('adminPass')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path class="eye-open-path" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle class="eye-open-path" cx="12" cy="12" r="3"></circle>
-            <path class="eye-closed-path" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line class="eye-closed-path" x1="1" y1="1" x2="23" y2="23"></line>
-          </svg>
-        </span>
+        <span class="password-toggle" onclick="togglePasswordVisibility('adminPass')">👁️</span>
       </div>
       <button class="btn primary" onclick="doAdminLogin()">Login</button>
       <div id="adminMsg" class="muted"></div>`;
     showTab('login');
 }
+
 async function doAdminLogin(){
     const username = document.getElementById('adminUser').value;
     const password = document.getElementById('adminPass').value;
@@ -2696,11 +2696,10 @@ async function doAdminLogin(){
     try{
         const res = await fetch(API+"/admin/login", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
         const data = await res.json();
-        if(res.ok && data.ok){ window.__isAdmin = true; msg.textContent='✅ Admin logged in'; renderTabs(); showTab('admin'); renderAdmin(); }
+        if(res.ok && data.ok){ window.__isAdmin = true; currentUser = null; try{ saveUserSession(null); }catch{} msg.textContent='✅ Admin logged in'; renderTabs(); showTab('admin'); }
         else { msg.textContent='❌ '+(data.error||'Login failed'); }
     }catch{ msg.textContent='❌ Network error'; }
 }
-function adminLogout(){ window.__isAdmin=false; renderTabs(); showTab('home'); }
 
 function renderAdmin(){
     const c = document.getElementById('screen-admin');
