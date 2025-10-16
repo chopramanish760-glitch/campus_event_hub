@@ -23,10 +23,11 @@
   #userInfo span { font-weight: bold; }
   #userInfo button { background: none; border: none; color: var(--red-accent); font-weight: bold; cursor: pointer; padding: 4px 8px; margin-left: 8px; border-radius: 6px; }
   #userInfo button:hover { background: rgba(239, 68, 68, 0.2); }
-  .tabs { height: 60px; display: flex; flex-shrink: 0; background-color: var(--nav-bg); padding: 5px; gap: 5px; border-top: 1px solid var(--border); }
-  .tab { flex: 1; display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-secondary); font-weight: 600; letter-spacing: 0.5px; border-radius: 10px; transition: background-color 0.2s ease, color 0.2s ease; }
-  .tab:hover { color: var(--text-primary); }
-  .tab.active { background-color: var(--nav-active); color: var(--text-primary); font-weight: bold; }
+  .tabs { position: sticky; bottom: 0; left: 0; right: 0; height: 64px; display: flex; flex-shrink: 0; background-color: #0f172a; padding: 8px; gap: 8px; border-top: 1px solid var(--border); z-index: 15; }
+  .tab { flex: 1; display: flex; justify-content: center; align-items: center; cursor: pointer; color: var(--text-secondary); font-weight: 700; letter-spacing: 0.4px; border-radius: 12px; transition: background-color 0.2s ease, color 0.2s ease, transform 0.08s ease; border: 1px solid transparent; }
+  .tab:hover { color: var(--text-primary); background: rgba(37, 99, 235, 0.08); }
+  .tab:active { transform: translateY(1px); }
+  .tab.active { background: rgba(37, 99, 235, 0.18); color: #e5e7eb; border-color: #2563eb; box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.25); }
   .content { flex: 1; overflow-y: auto; padding: 24px; display: none; }
   .content h2 { font-size: 1.5rem; margin-top: 0; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px;}
   .content h3, .content h4 { font-size: 1.2rem; }
@@ -144,8 +145,13 @@
 </div>
 
 <script>
-const API = "http://localhost:5000/api";
-const GOOGLE_MAPS_API_KEY = "AIzaSyDG8ImQsL_8g_4fbFPwUB-EBHPlKBw3u20";
+// Configure API base. You can set it via URL once: ?api=https://your-backend.onrender.com
+(function(){ try{ const qs=new URLSearchParams(location.search); const api=qs.get('api'); if(api){ localStorage.setItem('API_BASE', api); } }catch(_){} })();
+const API_BASE = (typeof window!=='undefined' && (window.API_BASE || localStorage.getItem('API_BASE'))) || "https://your-backend.onrender.com";
+// Force iframe maps to avoid API key issues on production
+const USE_IFRAME_MAPS = false;
+const API = API_BASE.replace(/\/$/, '') + "/api";
+const GOOGLE_MAPS_API_KEY = "AIzaSyAEze6N-tLo6Da6KU-PLcFBQ4zL3eT0BT0";
 let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null;
 let welcomeBannerUntil = 0;
 let lastUpcomingCount = -1;
@@ -226,8 +232,8 @@ function renderTabs() {
     <div class="tab" data-tab="tickets" onclick="showTab('tickets')">Tickets</div>
     <div class="tab" data-tab="media" onclick="showTab('media')">Media</div>
     <div class="tab" data-tab="🔔" onclick="showTab('notifications')">🔔</div>
-    ${currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Organizer</div>` : ""}
-    <div class="tab" data-tab="profile" onclick="showTab('profile')">Profile</div>`;
+    ${currentUser.role === "ORGANIZER" ? `<div class="tab" data-tab="organizer" onclick="showTab('organizer')">Org</div>` : ""}
+    <div class="tab" data-tab="profile" onclick="showTab('profile')">You</div>`;
 }
 function render() {
     const userInfo = document.getElementById("userInfo");
@@ -323,12 +329,18 @@ async function loadChatThread(eventId, regA, regB){
         thread.innerHTML = data.messages.map(m => {
             const mine = m.fromReg === currentUser.regNumber;
             if(m.type==='media'){
-                const label = m.mediaType==='photo' ? 'Image' : 'Video';
-                const onClick = m.mediaType==='photo' ? `showLightbox('${m.url}','photo')` : `showLightbox('${m.url}','video')`;
-                return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
-                    <button onclick="${onClick}" style="display:inline-block; padding:8px 10px; border-radius:10px; background:${mine?'#2563eb':'#374151'}; color:white; border:none; cursor:pointer;">${label}</button>
-                    <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
-                </div>`;
+                const src = `${API_BASE}${m.url}`;
+                if(m.mediaType==='photo'){
+                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
+                        <img src="${src}" style="max-width:70%; border-radius:8px; cursor:pointer;" onclick="showLightbox('${m.url}','photo')">
+                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
+                    </div>`;
+                } else {
+                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
+                        <video src="${src}" controls style="max-width:70%; border-radius:8px;" onclick="showLightbox('${m.url}','video')"></video>
+                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
+                    </div>`;
+                }
             }
             return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
                 <span style="display:inline-block; padding:8px 10px; border-radius:10px; background:${mine?'#2563eb':'#374151'}; color:white; max-width:80%; word-break:break-word;">${m.text}</span>
@@ -558,11 +570,12 @@ async function renderEvents() {
                                </div>`
                             : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
                 const mapButton = `<button class="btn" onclick="showMapModal('${e.venue}')">📍 View on Map</button>`;
+                const qrButton = `<button class="btn" onclick="openQrModal(${e.id})">🔳 Show QR</button>`;
                 // Show confirmation CTA only if organiser requested this user for a role and it's pending
                 const hasPendingVolunteerInvite = Array.isArray(e.volunteerRequests) && e.volunteerRequests.some(r => r.regNumber === currentUser.regNumber && r.status === 'pending');
                 const confirmVolunteerBtn = (!isVolunteer && !isCreator && hasPendingVolunteerInvite) ? `<button class="btn primary" onclick="openVolunteerConfirm(${e.id})">Confirm Volunteer</button>` : '';
                 // Render confirm button only once here
-                div.innerHTML += `<div class="card-buttons">${volunteerCardBtn}${bookButton}${mapButton}${confirmVolunteerBtn}</div>`;
+                div.innerHTML += `<div class="card-buttons">${volunteerCardBtn}${bookButton}${mapButton}${qrButton}${confirmVolunteerBtn}</div>`;
                 if (chatButton) {
                     const btnRow = document.createElement('div');
                     btnRow.className = 'card-buttons';
@@ -609,8 +622,8 @@ async function renderMedia() {
         events.forEach(event => {
             sectionHtml += `<div class="event-media-section"><h4>${event.title} - ${event.date}</h4><div class="media-grid">`;
             event.media.forEach(m => {
-                if (m.type === "photo") sectionHtml += `<div class=\"media-item\"><img src=\"http://localhost:5000${m.url}\" onclick=\"showLightbox('${m.url}', 'photo')\"></div>`;
-                if (m.type === "video") sectionHtml += `<div class=\"media-item\" onclick=\"showLightbox('${m.url}', 'video')\"><video src=\"http://localhost:5000${m.url}\" preload=\"metadata\"></video><div class=\"play-overlay\"><div class=\"play-icon\">▶</div></div></div>`;
+                if (m.type === "photo") sectionHtml += `<div class=\"media-item\"><img src=\"${API_BASE}${m.url}\" onclick=\"showLightbox('${m.url}', 'photo')\"></div>`;
+                if (m.type === "video") sectionHtml += `<div class=\"media-item\" onclick=\"showLightbox('${m.url}', 'video')\"><video src=\"${API_BASE}${m.url}\" preload=\"metadata\"></video><div class=\"play-overlay\"><div class=\"play-icon\">▶</div></div></div>`;
             });
             sectionHtml += `</div></div>`;
         });
@@ -641,11 +654,75 @@ function showLogin() {
             <label for="rememberMe" class="checkbox-label">Keep me logged in</label>
         </div>
         <button class="btn primary" onclick="doLogin()">Login</button>
+        <button class="btn" onclick="doQrVerifyIfPresent()">Verify QR</button>
         <button class="btn" onclick="showSignup()">Sign Up</button>
         <button class="btn muted" onclick="showForgotPassword()">Forgot Password?</button>
         <div id="loginMsg" class="muted"></div>
     </div>`;
     showTab('login');
+}
+// If a qr_e param is present, this verifies and shows minimal UI only after login
+async function doQrVerifyIfPresent(){
+    const params = new URLSearchParams(location.search);
+    const e = params.get('qr_e');
+    if(!e){
+        const msg = document.getElementById('loginMsg');
+        if(msg) msg.textContent = 'ℹ️ No QR to verify.';
+        return;
+    }
+    if(!currentUser){
+        const msg = document.getElementById('loginMsg');
+        if(msg) msg.textContent = 'Please login first, then tap Verify QR again.';
+        return;
+    }
+    try {
+        await handleQrFlowAfterLogin(Number(e));
+    } catch {}
+}
+
+async function handleQrFlowAfterLogin(eventId){
+    // Fetch fresh events and find the event
+    const res = await fetch(API+"/events");
+    const data = await res.json();
+    if(!data.ok) return;
+    const ev = (data.events||[]).find(x=>x.id===Number(eventId));
+    const body = document.getElementById('modal-body');
+    if(!ev){
+        alert('QR invalid or event not found.');
+        return;
+    }
+    // Minimal details + single book button
+    body.innerHTML = `<h3>${capitalizeWords(ev.title)}</h3>
+        <div class="kv">
+           <b>Date:</b> <span class="value">${ev.date}</span>
+           <b>Time:</b> <span class="value">${ev.time}</span>
+           <b>Venue:</b> <span class="value">${capitalizeWords(ev.venue)}</span>
+        </div>
+        <div style="margin-top:10px; display:flex; gap:8px;">
+           <button class="btn primary" onclick="bookTicketViaQr(${ev.id})">Book via QR</button>
+        </div>`;
+    document.getElementById('modal').style.display='flex';
+}
+
+function openQrModal(eventId){
+    // Render a QR containing the landing link with qr_e param
+    const link = `${location.origin}${location.pathname}?qr_e=${eventId}`;
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `<h3>Scan to Book</h3>
+      <div id="qrCanvas" style="display:flex;justify-content:center;align-items:center;height:240px"></div>
+      <div class="muted" style="margin-top:8px;word-break:break-all;">${link}</div>`;
+    document.getElementById('modal').style.display='flex';
+    // Lightweight inline QR generator (no external deps): use simple canvas squares
+    try { generateQr(link, 'qrCanvas'); } catch {}
+}
+
+// Tiny QR generator (fallback pattern for short URLs). For reliability in production, replace with a QR library.
+function generateQr(text, containerId){
+    // Use a dynamic import of Google Chart API as an image fallback for simplicity
+    const url = 'https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl='+encodeURIComponent(text);
+    const div = document.getElementById(containerId);
+    if(!div) return;
+    div.innerHTML = `<img src="${url}" alt="QR Code" width="220" height="220" style="background:#fff;padding:8px;border-radius:6px;">`;
 }
 function showSignup() {
     const s = document.getElementById("screen-signup");
@@ -717,6 +794,13 @@ async function doLogin() {
                 }
                 
                 await renderTickets(true); 
+                // If arrived via QR (qr_e param), proceed to QR flow after login
+                const params = new URLSearchParams(location.search);
+                const qrEvent = params.get('qr_e');
+                if (qrEvent) {
+                    // Show event details and a single QR book button
+                    try { await handleQrFlowAfterLogin(Number(qrEvent)); } catch {}
+                }
                 pollNotifications();
                 notificationInterval = setInterval(pollNotifications, 5000);
                 eventStateInterval = setInterval(checkEventStates, 30000);
@@ -779,6 +863,20 @@ function togglePasswordVisibility(e) { const t = document.getElementById(e), n =
 
 // ---------- Tickets ----------
 async function bookTicket(e){const t=await fetch(API+"/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("🎟️ Ticket booked!"),await renderTickets(!0),renderEvents()):alert("❌ "+(n.error||"Booking failed"))}
+async function bookTicketViaQr(eventId){
+    const res = await fetch(API+"/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId: eventId, regNumber: currentUser.regNumber, via: 'qr'})});
+    const data = await res.json();
+    if(res.ok && data.ok){
+        alert("🎟️ Ticket booked via QR!");
+        await renderTickets(true);
+        renderEvents();
+        // Show ticket immediately
+        const t = (userTickets||[]).find(x=>x.eventId===eventId && !x.waiting);
+        if(t) showTicketDetail(t);
+    } else {
+        alert("❌ "+(data.error||"Booking failed"));
+    }
+}
 async function renderTickets(e=!1){
     const t=await fetch(API+"/events"),n=await t.json();
     const a=await fetch(API+"/tickets/"+currentUser.regNumber),i=await a.json();
@@ -873,7 +971,7 @@ function createEventScreen() {
                   <span>${r}</span>
                </label>
             `).join('')}
-        </div>
+    </div>
     </div>
     <!-- Volunteer selection removed at creation. Organiser can invite later. -->
     <div style="display: flex; gap: 10px;">
@@ -1320,7 +1418,7 @@ async function loadVolunteersList(eventId){
                     <div style=\"display:flex; flex-direction:column; gap:2px;\">
                         <span style=\"color:#e5e7eb; font-weight:700;\">${v.name} (${v.regNumber})</span>
                         <span class=\"muted\" style=\"color:#cbd5e1;\">— ${v.role||''}</span>
-                    </div>
+                </div>
                 </div>
                 ${action}
             </div>`;
@@ -1488,7 +1586,7 @@ async function sendOrganizerMedia(eventId, studentReg){
     }catch(err){ msgBar.textContent = '❌ Network error'; }
 }
 async function deleteEvent(e,t){if(confirm(`Are you sure you want to permanently delete the event "${t}"? This will notify all booked users and delete all associated media.`)){const t=await fetch(API+"/events/"+e,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(t.ok)alert("Event deleted."),renderOrganizer(),renderEvents();else{const e=await t.json();alert("Error: "+e.error)}}}
-async function showEventMediaModal(e){const t=document.getElementById("modal-body"),n=await fetch(API+"/events"),a=await n.json(),i=a.events.find(t=>t.id===e.id);let o='<div class="media-grid">';i.media&&i.media.length>0?i.media.forEach(t=>{o+='<div class="media-item">',"photo"===t.type&&(o+=`<img src="http://localhost:5000${t.url}" onclick="showLightbox('${t.url}', 'photo')">`),"video"===t.type&&(o+=`<video src="http://localhost:5000${t.url}" onclick="showLightbox('${t.url}', 'video')"></video>`),o+=`<span class="delete-media-btn" onclick="deleteMedia(${t.id}, ${e.id})">✖</span></div>`}):o+='<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>',o+="</div>",t.innerHTML=`<h3>Media for ${e.title}</h3>${o}<div style="display:flex; gap:10px;"><button class="btn primary" onclick="triggerMediaUpload(${e.id})">Upload Image/Video</button><input type="file" id="eventMediaFile" accept="image/*,video/*" style="display:none"></div>`,document.getElementById("modal").style.display="flex"}
+async function showEventMediaModal(e){const t=document.getElementById("modal-body"),n=await fetch(API+"/events"),a=await n.json(),i=a.events.find(t=>t.id===e.id);let o='<div class="media-grid">';i.media&&i.media.length>0?i.media.forEach(t=>{o+='<div class="media-item">',"photo"===t.type&&(o+=`<img src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'photo')">`),"video"===t.type&&(o+=`<video src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'video')"></video>`),o+=`<span class="delete-media-btn" onclick="deleteMedia(${t.id}, ${e.id})">✖</span></div>`}):o+='<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>',o+="</div>",t.innerHTML=`<h3>Media for ${e.title}</h3>${o}<div style="display:flex; gap:10px;"><button class="btn primary" onclick="triggerMediaUpload(${e.id})">Upload Image/Video</button><input type="file" id="eventMediaFile" accept="image/*,video/*" style="display:none"></div>`,document.getElementById("modal").style.display="flex"}
 async function deleteMedia(e,t){if(confirm("Are you sure you want to delete this media file? This action cannot be undone.")){const n=await fetch(`${API}/media/${e}`,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(n.ok){const e=await fetch(API+"/events"),n=await e.json(),a=n.events.find(e=>e.id===t);showEventMediaModal(a)}else{const e=await n.json();alert("Error: "+(e.error||"Failed to delete media."))}}}
 function triggerMediaUpload(e){const t=document.getElementById('eventMediaFile')||(()=>{const f=document.createElement('input');f.type='file';f.accept='image/*,video/*';f.style.display='none';f.id='eventMediaFile';document.body.appendChild(f);return f;})();t.onchange=()=>{t.files&&t.files[0]&&uploadMediaForEvent(e,t.files[0])};t.click()}
 async function uploadMediaForEvent(eventId,file){try{const fd=new FormData();fd.append('file',file);fd.append('eventId',String(eventId));fd.append('regNumber',currentUser.regNumber);const res=await fetch(API+'/media',{method:'POST',body:fd});const data=await res.json();if(res.ok&&data.ok){const evRes=await fetch(API+"/events");const evData=await evRes.json();const ev=evData.events.find(e=>e.id===eventId);showEventMediaModal(ev)}else{alert('❌ '+(data.error||'Upload failed'))}}catch(err){alert('❌ Network error')}}
@@ -1775,6 +1873,9 @@ async function renderProfile(){
             <button class="btn primary" onclick="showEditProfile()">✏️ Edit Profile</button>
             <button class="btn" onclick="showIdCard()">🆔 View ID Card</button>
         </div>
+        <div style="margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px;">
+            <button class="btn" style="border-color:#ef4444; color:#ef4444; width:100%" onclick="openDeleteAccountModal()">🗑️ Delete Account</button>
+        </div>
     `;
 }
 
@@ -1930,7 +2031,13 @@ async function saveProfile() {
         msg.textContent = "❌ Network error: " + error.message;
     }
 }
-function showTicketDetail(e){const t=document.getElementById("modal-body");t.innerHTML=`<h3>🎟️ Ticket</h3><b>${e.eventTitle}</b><br>📅 ${e.date} 🕒 ${e.time}<br>📍 ${e.venue}<br>Seat: ${e.seat}<br>ID: ${e.ticketId}`,document.getElementById("modal").style.display="flex"}
+function showTicketDetail(e){
+    const t=document.getElementById("modal-body");
+    const viaLine = e.via && e.via==='qr' ? '<div class="muted">Ticket booked using QR code</div>' : '';
+    const bookedAtLine = e.bookedAt ? `<div class="muted">Booked at: ${new Date(e.bookedAt).toLocaleString()}</div>` : '';
+    t.innerHTML=`<h3>🎟️ Ticket</h3><b>${e.eventTitle}</b><br>📅 ${e.date} 🕒 ${e.time}<br>📍 ${e.venue}<br>Seat: ${e.seat}<br>ID: ${e.ticketId}${viaLine}${bookedAtLine}`;
+    document.getElementById("modal").style.display="flex"
+}
 function showIdCard(){if(!currentUser)return;const e="https://static.vecteezy.com/system/resources/previews/024/183/525/original/avatar-of-a-man-portrait-of-a-young-guy-illustration-of-male-character-in-modern-color-style-vector.jpg",t="https://static.vecteezy.com/system/resources/previews/024/183/500/original/female-avatar-brunette-woman-portrait-illustration-of-a-female-character-in-a-modern-color-style-vector.jpg";let n="https://i.imgur.com/KBOhEwI.png";if(currentUser.gender&&currentUser.gender.toLowerCase()==="male")n=e;else if(currentUser.gender&&currentUser.gender.toLowerCase()==="female")n=t;const a=document.getElementById("modal-body");let d = `<div class="id-card"><div class="id-card-header"><h3>${currentUser.role} ID CARD</h3></div><img src="${n}" alt="Avatar" class="id-card-avatar"><div class="id-card-details">`;
  d += `<p><strong>Name:</strong> ${capitalizeWords(currentUser.name||'')} ${capitalizeWords(currentUser.surname||'')}</p>`;
  d += `<p><strong>Reg. No:</strong> ${currentUser.regNumber||''}</p>`;
@@ -1941,11 +2048,52 @@ function showIdCard(){if(!currentUser)return;const e="https://static.vecteezy.co
  if(currentUser.pincode) d += `<p><strong>Pincode:</strong> ${currentUser.pincode}</p>`;
  d += `</div></div>`;
  a.innerHTML = d,document.getElementById("modal").style.display="flex"}
+function openDeleteAccountModal(){
+    const body = document.getElementById('modal-body');
+    body.innerHTML = `
+      <h3>Delete Account</h3>
+      <div class="muted">This action will permanently remove your account, bookings, events, media, and messages.</div>
+      <div class="password-wrapper" style="margin-top:10px;">
+         <input id="deletePass" type="password" placeholder="Enter your password to confirm">
+         <span class="password-toggle" onclick="togglePasswordVisibility('deletePass')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path class="eye-open-path" d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle class="eye-open-path" cx="12" cy="12" r="3"></circle>
+                <path class="eye-closed-path" d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line class="eye-closed-path" x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+         </span>
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <button class="btn" onclick="confirmDeleteAccount()" style="border-color:#ef4444; color:#ef4444; flex:1;">Confirm</button>
+        <button class="btn" onclick="closeModal()" style="flex:1;">Cancel</button>
+      </div>
+    `;
+    document.getElementById('modal').style.display='flex';
+}
+async function confirmDeleteAccount(){
+    const pass = document.getElementById('deletePass').value;
+    if(!pass){ alert('Please enter your password.'); return; }
+    if(!confirm('Are you absolutely sure? This cannot be undone.')) return;
+    try{
+        const res = await fetch(API+'/account/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ regNumber: currentUser.regNumber, password: pass })});
+        const data = await res.json();
+        if(res.ok && data.ok){
+            alert('Your account has been deleted.');
+            closeModal();
+            // Clear session and reset UI
+            clearUserSession();
+            currentUser = null;
+            renderTabs();
+            showLogin();
+        } else {
+            alert('❌ '+(data.error||'Failed to delete account'));
+        }
+    }catch(err){ alert('Network error'); }
+}
 function showEventIdCard(e){const t="https://static.vecteezy.com/system/resources/previews/024/183/525/original/avatar-of-a-man-portrait-of-a-young-guy-illustration-of-male-character-in-modern-color-style-vector.jpg",n="https://static.vecteezy.com/system/resources/previews/024/183/500/original/female-avatar-brunette-woman-portrait-illustration-of-a-female-character-in-a-modern-color-style-vector.jpg";let a="https://i.imgur.com/KBOhEwI.png";if(e.creatorGender&&e.creatorGender.toLowerCase()==="male")a=t;else if(e.creatorGender&&e.creatorGender.toLowerCase()==="female")a=n;const i=document.getElementById("modal-body");i.innerHTML=`<div class="id-card"><div class="id-card-header"><h3>EVENT ID CARD</h3></div><img src="${a}" alt="Organizer Avatar" class="id-card-avatar"><div class="id-card-details"><p style="font-size: 1.2rem"><strong>${capitalizeWords(e.title)}</strong></p><p><strong>Cat:</strong> ${e.category}</p><p><strong>Location:</strong> ${capitalizeWords(e.venue)}</p><p><strong>Organizer:</strong> ${capitalizeWords(e.creatorName)}</p></div></div>`,document.getElementById("modal").style.display="flex"}
 function showLightbox(e,t){
     const modal = document.getElementById("lightbox-modal");
     const content = document.getElementById("lightbox-content");
-    const fullUrl = `http://localhost:5000${e}`;
+    const fullUrl = `${API_BASE}${e}`;
     const isOrganizer = currentUser && currentUser.role === 'ORGANIZER';
     let mediaHtml = '';
     if (t === 'photo') mediaHtml = `<img src="${fullUrl}">`;
@@ -1958,7 +2106,7 @@ function showLightbox(e,t){
 
 function downloadMedia(url){
     const a = document.createElement('a');
-    a.href = `http://localhost:5000${url}`;
+    a.href = `${API_BASE}${url}`;
     a.download = '';
     document.body.appendChild(a);
     a.click();
@@ -1989,8 +2137,12 @@ async function showMapModal(venue) {
         </div>
     </div>`;
     try {
-        await ensureGoogleMapsLoaded();
         const target = await resolveVenueLatLng(venue);
+        if (USE_IFRAME_MAPS) {
+            showIframeFallback(venue, target);
+            return;
+        }
+        await ensureGoogleMapsLoaded();
         initLiveMap(target, venue);
         // Show a subtle banner if not secure context (affects geolocation precision on other machines)
         const isLocalhost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -2006,9 +2158,13 @@ async function showMapModal(venue) {
             }
         }
     } catch (err) {
-        // Default to MAIN BUILDING if target isn't available
-        const fallbackTarget = {lat:13.011118667256149,lng:74.7944203377819};
-        showIframeFallback(venue, fallbackTarget);
+        const body = document.getElementById('gmaps');
+        const text = document.createElement('div');
+        text.className = 'muted';
+        text.style.cssText = 'padding:16px; color:#a1a1aa;';
+        text.textContent = 'Map failed to load. Try reloading or use Get Directions.';
+        body.innerHTML = '';
+        body.appendChild(text);
     }
 }
 

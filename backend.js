@@ -8,6 +8,21 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Root status endpoint for platform health and manual checks
+app.get("/", (req, res) => {
+  res.type("text/plain").send(
+    [
+      "Campus Event Hub backend is running.",
+      "",
+      "Try these API endpoints:",
+      "GET  /api/events",
+      "GET  /api/notifications/:regNumber",
+      "POST /api/events, /api/tickets, /api/volunteers/add, /api/volunteers/respond",
+    ].join("\n")
+  );
+});
+app.get("/healthz", (req, res) => res.json({ ok: true }));
+
 const DATA_FILE = path.join(__dirname, "data.json");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
@@ -244,7 +259,7 @@ app.get("/api/events", (req, res) => {
 });
 
 app.post("/api/tickets", (req, res) => {
-  const data = loadData(); const { eventId, regNumber } = req.body;
+  const data = loadData(); const { eventId, regNumber, via } = req.body;
   const event = data.events.find(e => e.id === eventId); const user = data.users.find(u => u.regNumber === regNumber);
   if (!event || !user) return res.status(404).json({ ok: false, error: "Event or user not found" });
   if (event.creatorRegNumber === regNumber) { return res.status(400).json({ ok: false, error: "You cannot book a ticket for your own event." }); }
@@ -260,10 +275,11 @@ app.post("/api/tickets", (req, res) => {
     saveData(data); return res.status(400).json({ ok: false, error: "Venue is full" });
   }
   event.taken += 1; const seatNumber = event.taken; const roleLetter = user.role === "ORGANIZER" ? "O" : "S";
-  const booking = { regNumber, name: user.name, seat: seatNumber, role: roleLetter, eventId: event.id, bookedAt: new Date().toISOString() };
+  const booking = { regNumber, name: user.name, seat: seatNumber, role: roleLetter, eventId: event.id, bookedAt: new Date().toISOString(), via: (via === 'qr' ? 'qr' : 'app') };
   event.bookings.push(booking);
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
-  data.notifications[regNumber].unshift({ msg: `🎟️ You booked a ticket for ${event.title}`, time: new Date().toISOString(), read: false });
+  const notifMsg = booking.via === 'qr' ? `🎟️ You booked a ticket via QR code for ${event.title}` : `🎟️ You booked a ticket for ${event.title}`;
+  data.notifications[regNumber].unshift({ msg: notifMsg, time: new Date().toISOString(), read: false });
   saveData(data); res.json({ ok: true, booking });
 });
 app.delete("/api/tickets", (req, res) => {
@@ -347,7 +363,9 @@ app.get("/api/tickets/:regNumber", (req, res) => {
           role: b.role,
           category: event.category,
           ticketId: (b.name || '').substring(0,3).toLowerCase() + reg,
-          waiting: false
+          waiting: false,
+          via: b.via || 'app',
+          bookedAt: b.bookedAt
         });
       }
     });
@@ -727,4 +745,61 @@ app.post('/api/messages/media', chatUpload.single('file'), (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: 'Failed to save file.' });
   }
+});
+
+// ---------- Delete Account (User self-service) ----------
+// Body: { regNumber, password }
+app.post('/api/account/delete', (req, res) => {
+  const data = loadData();
+  const { regNumber, password } = req.body;
+  if (!regNumber || !password) return res.status(400).json({ ok: false, error: 'Missing fields.' });
+  const userIndex = data.users.findIndex(u => u.regNumber === regNumber && u.password === password);
+  if (userIndex === -1) return res.status(401).json({ ok: false, error: 'Invalid credentials.' });
+
+  const user = data.users[userIndex];
+
+  // 1) Remove bookings and waitlists referencing this user across all events
+  data.events.forEach(event => {
+    // Remove from bookings
+    const beforeCount = (event.bookings||[]).length;
+    event.bookings = (event.bookings||[]).filter(b => b.regNumber !== regNumber);
+    const removed = beforeCount - (event.bookings||[]).length;
+    if (removed > 0) {
+      event.taken = Math.max(0, (event.taken||0) - removed);
+      // Re-seat numbers compactly
+      event.bookings.sort((a, b) => a.seat - b.seat).forEach((b, idx) => b.seat = idx + 1);
+    }
+    // Remove from waitlist
+    event.waitlist = Array.isArray(event.waitlist) ? event.waitlist.filter(w => w.regNumber !== regNumber) : [];
+    // Remove from volunteers
+    event.volunteers = Array.isArray(event.volunteers) ? event.volunteers.filter(v => v.regNumber !== regNumber) : [];
+    // Remove pending volunteer requests
+    event.volunteerRequests = Array.isArray(event.volunteerRequests) ? event.volunteerRequests.filter(r => r.regNumber !== regNumber) : [];
+  });
+
+  // 2) If organizer: delete events they created and associated media
+  const eventsToDelete = data.events.filter(e => e.creatorRegNumber === regNumber).map(e => e.id);
+  if (eventsToDelete.length > 0) {
+    // Delete media files for those events
+    const mediaToDelete = data.media.filter(m => eventsToDelete.includes(m.eventId));
+    mediaToDelete.forEach(m => { try { const fp = path.join(__dirname, m.url); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} });
+    data.media = data.media.filter(m => !eventsToDelete.includes(m.eventId));
+    data.events = data.events.filter(e => !eventsToDelete.includes(e.id));
+  }
+
+  // 3) Remove user media messages and text messages (retain threads but remove their messages)
+  if (Array.isArray(data.messages)) {
+    data.messages = data.messages.filter(m => m.fromReg !== regNumber && m.toReg !== regNumber);
+  }
+
+  // 4) Remove notifications
+  if (data.notifications && data.notifications[regNumber]) {
+    delete data.notifications[regNumber];
+  }
+
+  // 5) Finally remove the user record
+  data.users.splice(userIndex, 1);
+
+  saveData(data);
+  return res.json({ ok: true });
 });
