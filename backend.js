@@ -40,6 +40,10 @@ app.post("/api/signup", (req, res) => {
   const data = loadData();
   const { name, surname, age, gender, email, phone, regNumber, password, role } = req.body;
   if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
+  // Uniqueness validation across all users
+  if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
+  if (data.users.find(u => (u.email||'').toLowerCase() === String(email).toLowerCase())) { return res.status(400).json({ ok: false, error: "Email already in use" }); }
+  if (data.users.find(u => u.phone === phone)) { return res.status(400).json({ ok: false, error: "Phone already in use" }); }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
   if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
   if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
@@ -83,7 +87,35 @@ app.post('/api/admin/organizers/remove', (req, res) => {
   res.json({ ok:true });
 });
 // Admin delete student account (hard delete)
-app.post('/api/admin/users/delete', (req, res) => { const data = loadData(); const { regNumber } = req.body; const idx = data.users.findIndex(x=>x.regNumber===regNumber); if(idx===-1) return res.status(404).json({ ok:false, error:'User not found' }); data.users.splice(idx,1); saveData(data); res.json({ ok:true }); });
+app.post('/api/admin/users/delete', (req, res) => {
+  const data = loadData(); const { regNumber } = req.body;
+  const idx = data.users.findIndex(x=>x.regNumber===regNumber);
+  if(idx===-1) return res.status(404).json({ ok:false, error:'User not found' });
+  // Remove bookings, waitlist, volunteer entries
+  data.events.forEach(event => {
+    const before = (event.bookings||[]).length;
+    event.bookings = (event.bookings||[]).filter(b=>b.regNumber!==regNumber);
+    event.taken = Math.max(0, (event.taken||0) - (before - event.bookings.length));
+    event.bookings.sort((a,b)=>a.seat-b.seat).forEach((b,i)=>b.seat=i+1);
+    event.waitlist = Array.isArray(event.waitlist) ? event.waitlist.filter(w=>w.regNumber!==regNumber) : [];
+    event.volunteers = Array.isArray(event.volunteers) ? event.volunteers.filter(v=>v.regNumber!==regNumber) : [];
+    event.volunteerRequests = Array.isArray(event.volunteerRequests) ? event.volunteerRequests.filter(r=>r.regNumber!==regNumber) : [];
+  });
+  // If organizer, delete their events and media
+  const evIds = data.events.filter(e=>e.creatorRegNumber===regNumber).map(e=>e.id);
+  if(evIds.length){
+    const mediaToDelete = data.media.filter(m=>evIds.includes(m.eventId));
+    mediaToDelete.forEach(m=>{ try{ const fp=path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{} });
+    data.media = data.media.filter(m=>!evIds.includes(m.eventId));
+    data.events = data.events.filter(e=>!evIds.includes(e.id));
+  }
+  // Messages and notifications
+  data.messages = (data.messages||[]).filter(m=>m.fromReg!==regNumber && m.toReg!==regNumber);
+  if(data.notifications && data.notifications[regNumber]) delete data.notifications[regNumber];
+  // Finally remove user
+  data.users.splice(idx,1);
+  saveData(data); res.json({ ok:true });
+});
 // Admin events list
 app.get('/api/admin/events', (req, res) => { const data = loadData(); res.json({ ok:true, events: data.events }); });
 // Admin delete event with reason

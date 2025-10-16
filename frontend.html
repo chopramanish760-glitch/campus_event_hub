@@ -212,6 +212,13 @@ function showTab(tab) {
         const activeTab = Array.from(tabsContainer.querySelectorAll('.tab')).find(t => t.getAttribute('data-tab') === tabName);
         if (activeTab) activeTab.classList.add('active');
     } else { tabsContainer.style.display = "none"; }
+    // Ensure admin screen exists under the same container as other screens
+    if (tab === 'admin' && !document.getElementById('screen-admin')) {
+        try{
+            const parent = document.querySelector('.phone') || document.body;
+            const root = document.createElement('div'); root.id='screen-admin'; root.className='content'; parent.insertBefore(root, document.getElementById('tabs'));
+        }catch{}
+    }
     const screen = document.getElementById("screen-" + tab);
     if (screen) {
         if (tab === 'login' || tab === 'auth') {
