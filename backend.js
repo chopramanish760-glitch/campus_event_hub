@@ -683,6 +683,21 @@ app.post('/api/volunteers/respond', (req, res) => {
     const volunteer = { regNumber, name: user ? user.name : regNumber, volunteerId: `V${String(nextIdx).padStart(2,'0')}`, role: vreq.role };
     event.volunteers.push(volunteer);
     vreq.status = 'accepted';
+    // Remove existing ticket and waitlist, volunteers don't need tickets
+    try{
+      event.bookings = Array.isArray(event.bookings) ? event.bookings : [];
+      const before = event.bookings.length;
+      event.bookings = event.bookings.filter(b => b.regNumber !== regNumber);
+      const removed = before - event.bookings.length;
+      if(removed>0){
+        event.taken = Math.max(0, (event.taken||0) - removed);
+        event.bookings.sort((a,b)=>a.seat-b.seat).forEach((b,i)=> b.seat=i+1);
+        if(!data.notifications) data.notifications={};
+        if(!data.notifications[regNumber]) data.notifications[regNumber]=[];
+        data.notifications[regNumber].unshift({ msg: `🎟️ Your ticket for '${event.title}' was removed as you are now a volunteer.`, time:new Date().toISOString(), read:false });
+      }
+      event.waitlist = Array.isArray(event.waitlist) ? event.waitlist.filter(w => w.regNumber !== regNumber) : [];
+    }catch{}
     if (!data.notifications) data.notifications = {};
     if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
     data.notifications[regNumber].unshift({ msg: `✅ You accepted volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
