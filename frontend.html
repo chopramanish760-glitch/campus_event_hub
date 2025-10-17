@@ -364,7 +364,12 @@ async function loadChatThread(eventId, regA, regB){
                     </div>`;
                 } else {
                     return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
-                        <video src="${src}" controls style="max-width:70%; border-radius:8px;" onclick="showLightbox('${m.url}','video')"></video>
+                        <video src="${src}" controls preload="metadata" style="max-width:70%; border-radius:8px; max-height: 200px;" onclick="showLightbox('${m.url}','video')">
+                            <source src="${src}" type="video/mp4">
+                            <source src="${src}" type="video/webm">
+                            <source src="${src}" type="video/ogg">
+                            Your browser does not support the video tag.
+                        </video>
                         <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
                     </div>`;
                 }
@@ -416,7 +421,15 @@ async function sendChatMedia(eventId, organizerReg){
         thread.innerHTML += `<div style="text-align:right; margin:6px 0;"><img src="${url}" style="max-width:70%; border-radius:8px;"><div class="muted" style="font-size:0.75rem;">uploading…</div></div>`;
     } else if(file.type.startsWith('video/')){
         const url = URL.createObjectURL(file);
-        thread.innerHTML += `<div style="text-align:right; margin:6px 0;"><video src="${url}" controls style="max-width:70%; border-radius:8px;"></video><div class="muted" style="font-size:0.75rem;">uploading…</div></div>`;
+        thread.innerHTML += `<div style="text-align:right; margin:6px 0;">
+            <video src="${url}" controls preload="metadata" style="max-width:70%; border-radius:8px; max-height: 200px;">
+                <source src="${url}" type="video/mp4">
+                <source src="${url}" type="video/webm">
+                <source src="${url}" type="video/ogg">
+                Your browser does not support the video tag.
+            </video>
+            <div class="muted" style="font-size:0.75rem;">uploading…</div>
+        </div>`;
     }
     thread.scrollTop = thread.scrollHeight;
     try{
@@ -2338,7 +2351,12 @@ function showLightbox(e,t){
     const isOrganizer = currentUser && currentUser.role === 'ORGANIZER';
     let mediaHtml = '';
     if (t === 'photo') mediaHtml = `<img src="${fullUrl}">`;
-    if (t === 'video') mediaHtml = `<video src="${fullUrl}" controls autoplay></video>`;
+    if (t === 'video') mediaHtml = `<video src="${fullUrl}" controls autoplay preload="metadata" style="max-width: 100%; max-height: 80vh;">
+        <source src="${fullUrl}" type="video/mp4">
+        <source src="${fullUrl}" type="video/webm">
+        <source src="${fullUrl}" type="video/ogg">
+        Your browser does not support the video tag.
+    </video>`;
     const header = `<a class="lightbox-back-arrow" onclick="closeLightbox(event)">←</a>`;
     const downloadBar = isOrganizer ? `<div style="text-align:center; margin-top:12px;"><a href="${fullUrl}" download class="btn" style="display:inline-block; width:auto">⬇ Download</a></div>` : '';
     content.innerHTML = header + mediaHtml + downloadBar;
@@ -2803,7 +2821,7 @@ function renderAdmin(){
         <button class="sub-nav-btn" id="tab-events" onclick="setAdminTab('events')">Events</button>
         <button class="sub-nav-btn" id="tab-verify" onclick="setAdminTab('verify')">Verify</button>
         <button class="sub-nav-btn" id="tab-you" onclick="setAdminTab('you')">You</button>
-        <button class="sub-nav-btn" onclick="showDebugPanel()">🔧 Debug</button>
+        <button class="sub-nav-btn" id="tab-debug" onclick="setAdminTab('debug')">🔧 Debug</button>
       </div>
       <div id="admin-content"></div>`;
     setAdminTab('users');
@@ -2815,6 +2833,7 @@ function setAdminTab(which){
   if(which==='events'){ document.getElementById('tab-events').classList.add('active'); renderAdminEvents(); }
   if(which==='verify'){ document.getElementById('tab-verify').classList.add('active'); renderAdminVerify(); }
   if(which==='you'){ document.getElementById('tab-you').classList.add('active'); renderAdminYou(); }
+  if(which==='debug'){ document.getElementById('tab-debug').classList.add('active'); renderAdminDebug(); }
 }
 function adminLogout(){
   try{ window.__isAdmin = false; }catch{}
@@ -2971,12 +2990,12 @@ async function renderAdminEvents(){
         const statusColor = status === 'live' ? '#10b981' : status === 'past' ? '#6b7280' : '#3b82f6';
         const statusText = status === 'live' ? '🔴 LIVE' : status === 'past' ? '✅ ENDED' : '⏳ UPCOMING';
         
-        return `<div class="card" style="margin-bottom: 12px;">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-            <div style="flex: 1; min-width: 0;">
-              <div class="category-badge" style="margin-bottom: 8px;">${e.category || 'General'}</div>
-              <h4 style="margin: 0 0 8px 0; color: #93c5fd; font-size: 1.1rem;">${capitalizeWords(e.title)}</h4>
-              <div class="kv" style="margin: 0;">
+        return `<div class="card" style="margin-bottom: 16px; padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+            <div style="flex: 1; min-width: 0; margin-right: 16px;">
+              <div class="category-badge" style="margin-bottom: 8px; display: inline-block;">${e.category || 'General'}</div>
+              <h4 style="margin: 0 0 12px 0; color: #93c5fd; font-size: 1.1rem; word-wrap: break-word;">${capitalizeWords(e.title)}</h4>
+              <div class="kv" style="margin: 0; display: grid; grid-template-columns: 80px 1fr; gap: 6px 12px;">
                 <b>Date:</b> <span class="value">${e.date}</span>
                 <b>Time:</b> <span class="value">${e.time}</span>
                 <b>Venue:</b> <span class="value">${capitalizeWords(e.venue)}</span>
@@ -2985,18 +3004,17 @@ async function renderAdminEvents(){
                 <b>Status:</b> <span class="value" style="color: ${statusColor}; font-weight: bold;">${statusText}</span>
               </div>
             </div>
-            <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 16px;">
-              <button class="btn" onclick="adminOpenEvent(${e.id})" style="font-size: 0.9rem; padding: 6px 12px;">👁️ View</button>
-              <button class="btn" onclick="adminOpenEventBookings(${e.id}, '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 6px 12px;">📋 Bookings</button>
-              <button class="btn" onclick="adminOpenVolunteers(${e.id}, '${e.title.replace(/'/g,"&#39;")}', '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 6px 12px;">🤝 Volunteers</button>
-              <button class="btn" onclick="adminOpenWaitlist(${e.id}, '${e.creatorRegNumber}', '${e.title.replace(/'/g,"&#39;")}')" style="font-size: 0.9rem; padding: 6px 12px;">🕒 Waitlist</button>
-              <button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')" style="font-size: 0.9rem; padding: 6px 12px; background: #ef4444; border-color: #ef4444;">🗑️ Delete</button>
+            <div style="display: flex; flex-direction: column; gap: 8px; min-width: 120px;">
+              <button class="btn" onclick="adminOpenEventBookings(${e.id}, '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 8px 12px; width: 100%;">📋 Bookings</button>
+              <button class="btn" onclick="adminOpenVolunteers(${e.id}, '${e.title.replace(/'/g,"&#39;")}', '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 8px 12px; width: 100%;">🤝 Volunteers</button>
+              <button class="btn" onclick="adminOpenWaitlist(${e.id}, '${e.creatorRegNumber}', '${e.title.replace(/'/g,"&#39;")}')" style="font-size: 0.9rem; padding: 8px 12px; width: 100%;">🕒 Waitlist</button>
+              <button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')" style="font-size: 0.9rem; padding: 8px 12px; width: 100%; background: #ef4444; border-color: #ef4444;">🗑️ Delete</button>
             </div>
           </div>
-          <div style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px;">
-            <div class="muted" style="font-size: 0.9rem;">
-              Created by: ${e.creatorRegNumber} | ID: ${e.id}
-              ${e.resources && e.resources.length > 0 ? ` | Resources: ${e.resources.join(', ')}` : ''}
+          <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">
+            <div class="muted" style="font-size: 0.9rem; line-height: 1.4;">
+              <div><strong>Created by:</strong> ${e.creatorRegNumber} | <strong>Event ID:</strong> ${e.id}</div>
+              ${e.resources && e.resources.length > 0 ? `<div style="margin-top: 4px;"><strong>Resources:</strong> ${e.resources.join(', ')}</div>` : ''}
             </div>
           </div>
         </div>`;
@@ -3212,31 +3230,122 @@ async function importData() {
     input.click();
 }
 
-function showDebugPanel() {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.innerHTML = `
-        <div class="modal-content">
-            <h3>🔧 Debug & Data Management</h3>
+async function renderAdminDebug() {
+    const pane = document.getElementById('admin-content');
+    
+    // Fetch live backend stats
+    let backendStats = null;
+    let dataIntegrity = null;
+    let persistenceInfo = null;
+    
+    try {
+        const statsRes = await fetch(API + '/data/status');
+        const statsData = await statsRes.json();
+        if (statsData.ok) backendStats = statsData.stats;
+        
+        const integrityRes = await fetch(API + '/data/integrity');
+        const integrityData = await integrityRes.json();
+        if (integrityData.ok) dataIntegrity = integrityData.integrity;
+        
+        const persistenceRes = await fetch(API + '/data/persistence');
+        const persistenceData = await persistenceRes.json();
+        if (persistenceData.ok) persistenceInfo = persistenceData.persistence;
+    } catch (err) {
+        console.error('Failed to fetch debug data:', err);
+    }
+    
+    pane.innerHTML = `
+        <h3>🔧 Debug & Data Management</h3>
+        
+        <div class="card" style="margin-bottom: 20px;">
+            <h4>📊 Live Backend Statistics</h4>
             <div class="kv">
                 <b>API Base:</b> <span class="value">${API_BASE}</span>
                 <b>Current User:</b> <span class="value">${currentUser ? currentUser.regNumber : 'Not logged in'}</span>
             </div>
-            <div style="margin: 20px 0;">
-                <button class="btn" onclick="checkBackendStatus().then(s => alert('Status: ' + JSON.stringify(s, null, 2)))">📊 Check Backend Status</button>
-                <button class="btn" onclick="checkDataIntegrity().then(i => alert('Integrity: ' + JSON.stringify(i, null, 2)))">🔍 Check Data Integrity</button>
+            ${backendStats ? `
+            <div class="kv">
+                <b>Total Users:</b> <span class="value">${backendStats.users}</span>
+                <b>Total Events:</b> <span class="value">${backendStats.events}</span>
+                <b>Total Media:</b> <span class="value">${backendStats.media}</span>
+                <b>Total Messages:</b> <span class="value">${backendStats.messages}</span>
+                <b>Notifications:</b> <span class="value">${backendStats.notifications}</span>
+            </div>
+            <div class="kv">
+                <b>Data File:</b> <span class="value">${backendStats.dataFileExists ? '✅ Exists' : '❌ Missing'}</span>
+                <b>Backups:</b> <span class="value">${backendStats.backupCount}</span>
+                <b>Last Modified:</b> <span class="value">${backendStats.lastModified ? new Date(backendStats.lastModified).toLocaleString() : 'Unknown'}</span>
+            </div>
+            ` : '<p class="muted">❌ Unable to fetch backend stats</p>'}
+        </div>
+        
+        ${dataIntegrity ? `
+        <div class="card" style="margin-bottom: 20px;">
+            <h4>🔍 Data Integrity Check</h4>
+            <div style="color: ${dataIntegrity.isHealthy ? '#10b981' : '#ef4444'}; font-weight: bold; margin-bottom: 10px;">
+                ${dataIntegrity.isHealthy ? '✅ Data is healthy' : '❌ Data issues detected'}
+            </div>
+            ${dataIntegrity.issues.length > 0 ? `
+            <div style="margin-bottom: 10px;">
+                <b>Issues Found:</b>
+                <ul style="margin: 5px 0; padding-left: 20px;">
+                    ${dataIntegrity.issues.map(issue => `<li style="color: #ef4444;">${issue}</li>`).join('')}
+                </ul>
+            </div>
+            ` : ''}
+            <div class="kv">
+                <b>Users:</b> <span class="value">${dataIntegrity.stats.users}</span>
+                <b>Events:</b> <span class="value">${dataIntegrity.stats.events}</span>
+                <b>Media:</b> <span class="value">${dataIntegrity.stats.media}</span>
+                <b>Messages:</b> <span class="value">${dataIntegrity.stats.messages}</span>
+                <b>Notifications:</b> <span class="value">${dataIntegrity.stats.notifications}</span>
+            </div>
+        </div>
+        ` : ''}
+        
+        ${persistenceInfo ? `
+        <div class="card" style="margin-bottom: 20px;">
+            <h4>💾 Live Backend Persistence</h4>
+            <div style="color: ${persistenceInfo.dataFile.exists ? '#10b981' : '#ef4444'}; font-weight: bold; margin-bottom: 10px;">
+                ${persistenceInfo.dataFile.exists ? '✅ Data.json exists' : '❌ Data.json missing'}
+            </div>
+            <div class="kv">
+                <b>Data File:</b> <span class="value">${persistenceInfo.dataFile.path}</span>
+                <b>File Size:</b> <span class="value">${persistenceInfo.dataFile.size} bytes</span>
+                <b>Last Modified:</b> <span class="value">${new Date(persistenceInfo.dataFile.lastModified).toLocaleString()}</span>
+            </div>
+            <div style="color: ${persistenceInfo.uploadsFolder.exists ? '#10b981' : '#ef4444'}; font-weight: bold; margin: 10px 0;">
+                ${persistenceInfo.uploadsFolder.exists ? '✅ Uploads folder exists' : '❌ Uploads folder missing'}
+            </div>
+            <div class="kv">
+                <b>Uploads Folder:</b> <span class="value">${persistenceInfo.uploadsFolder.path}</span>
+                <b>File Count:</b> <span class="value">${persistenceInfo.uploadsFolder.fileCount} files</span>
+                <b>Backups:</b> <span class="value">${persistenceInfo.backups.count} backups</span>
+            </div>
+            <div class="kv">
+                <b>Live Data Counts:</b>
+                <span class="value">Users: ${persistenceInfo.dataCounts.users} | Events: ${persistenceInfo.dataCounts.events} | Media: ${persistenceInfo.dataCounts.media} | Messages: ${persistenceInfo.dataCounts.messages}</span>
+            </div>
+            <div class="muted" style="font-size: 0.9rem; margin-top: 8px;">
+                Last checked: ${new Date(persistenceInfo.timestamp).toLocaleString()}
+            </div>
+        </div>
+        ` : ''}
+        
+        <div class="card" style="margin-bottom: 20px;">
+            <h4>🛠️ Debug Actions</h4>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
+                <button class="btn" onclick="checkBackendStatus().then(s => alert('Status: ' + JSON.stringify(s, null, 2)))">📊 Refresh Status</button>
+                <button class="btn" onclick="checkDataIntegrity().then(i => alert('Integrity: ' + JSON.stringify(i, null, 2)))">🔍 Check Integrity</button>
                 <button class="btn" onclick="exportData()">📤 Export Data</button>
                 <button class="btn" onclick="importData()">📥 Import Data</button>
             </div>
-            <div style="margin: 20px 0;">
-                <h4>Quick Actions:</h4>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button class="btn" onclick="localStorage.clear(); alert('Local storage cleared')">🗑️ Clear Local Storage</button>
                 <button class="btn" onclick="location.reload()">🔄 Reload Page</button>
             </div>
-            <button class="btn" onclick="this.closest('.modal').remove()">Close</button>
         </div>
     `;
-    document.body.appendChild(modal);
 }
 </script>
 <script>

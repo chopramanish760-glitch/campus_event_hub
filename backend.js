@@ -165,7 +165,10 @@ function saveData(data) {
     // Verify the final file
     try {
       const finalData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-      console.log(`✅ Data saved successfully (${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media)`);
+      // Enhanced logging with file verification
+      const fileStats = fs.statSync(DATA_FILE);
+      console.log(`💾 Data saved to LIVE BACKEND: ${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media`);
+      console.log(`📁 File: ${DATA_FILE} (${fileStats.size} bytes, modified: ${fileStats.mtime.toISOString()})`);
       
       // Update latest backup after successful save
       const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
@@ -1059,6 +1062,48 @@ app.get('/api/data/integrity', (req, res) => {
   }
 });
 
+// Data persistence verification endpoint
+app.get('/api/data/persistence', (req, res) => {
+  try {
+    const data = loadData();
+    const fileStats = fs.statSync(DATA_FILE);
+    const uploadStats = fs.existsSync(UPLOAD_DIR) ? fs.readdirSync(UPLOAD_DIR).length : 0;
+    const backupCount = fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
+    
+    res.json({
+      ok: true,
+      persistence: {
+        dataFile: {
+          exists: fs.existsSync(DATA_FILE),
+          path: DATA_FILE,
+          size: fileStats.size,
+          lastModified: fileStats.mtime.toISOString(),
+          readable: true
+        },
+        uploadsFolder: {
+          exists: fs.existsSync(UPLOAD_DIR),
+          path: UPLOAD_DIR,
+          fileCount: uploadStats
+        },
+        backups: {
+          count: backupCount,
+          path: BACKUP_DIR,
+          exists: fs.existsSync(BACKUP_DIR)
+        },
+        dataCounts: {
+          users: data.users?.length || 0,
+          events: data.events?.length || 0,
+          media: data.media?.length || 0,
+          messages: data.messages?.length || 0
+        },
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.delete("/api/waitlist", (req, res) => {
   const data = loadData();
   const { eventId, regNumber } = req.body;
@@ -1106,8 +1151,28 @@ app.post("/api/media", upload.single("file"), (req, res) => {
   if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
   if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
   // Allow media uploads for upcoming, live, and past events
-  const ext = path.extname(req.file.originalname); const finalName = req.file.filename + ext; const finalPath = path.join(UPLOAD_DIR, finalName);
+  const ext = path.extname(req.file.originalname); 
+  const finalName = req.file.filename + ext; 
+  const finalPath = path.join(UPLOAD_DIR, finalName);
+  
+  // Ensure uploads directory exists
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    console.log(`📁 Created uploads directory: ${UPLOAD_DIR}`);
+  }
+  
+  // Move file to permanent location
   fs.renameSync(req.file.path, finalPath);
+  
+  // Verify file was saved to live backend
+  if (!fs.existsSync(finalPath)) {
+    console.error(`❌ File not saved to live backend: ${finalPath}`);
+    return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
+  }
+  
+  const fileStats = fs.statSync(finalPath);
+  console.log(`📁 File saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
+  
   const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
   const media = { id: Date.now(), eventId: parseInt(eventId), name: req.file.originalname, url: "/uploads/" + finalName, type };
   data.media.push(media); 
@@ -1163,6 +1228,23 @@ app.put("/api/profile", (req, res) => {
 
 app.use("/uploads", express.static(UPLOAD_DIR));
 const PORT = process.env.PORT || 5000;
+// Enhanced startup logging with data verification
+console.log('🚀 Campus Event Hub Backend Starting...');
+console.log(`📁 Data file: ${DATA_FILE}`);
+console.log(`📁 Upload dir: ${UPLOAD_DIR}`);
+console.log(`📁 Backup dir: ${BACKUP_DIR}`);
+console.log(`🔧 Admin: ${DEFAULT_ADMIN.username}`);
+
+// Verify initial data state
+try {
+  const initialData = loadData();
+  console.log(`📊 Initial data loaded: ${initialData.users?.length || 0} users, ${initialData.events?.length || 0} events, ${initialData.media?.length || 0} media`);
+  console.log(`💾 Data file exists: ${fs.existsSync(DATA_FILE)}`);
+  console.log(`📦 Backup count: ${fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0}`);
+} catch (err) {
+  console.error('❌ Failed to load initial data:', err);
+}
+
 app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
 
 // ---------- Messages (Chat) ----------
@@ -1256,10 +1338,28 @@ app.post('/api/messages/media', chatUpload.single('file'), (req, res) => {
     return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
   }
   try {
+    // Ensure uploads directory exists
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      console.log(`📁 Created uploads directory: ${UPLOAD_DIR}`);
+    }
+    
     const ext = path.extname(req.file.originalname);
     const finalName = req.file.filename + ext;
     const finalPath = path.join(UPLOAD_DIR, finalName);
+    
+    // Move file to permanent location
     fs.renameSync(req.file.path, finalPath);
+    
+    // Verify file was saved to live backend
+    if (!fs.existsSync(finalPath)) {
+      console.error(`❌ Chat file not saved to live backend: ${finalPath}`);
+      return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
+    }
+    
+    const fileStats = fs.statSync(finalPath);
+    console.log(`📁 Chat file saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
+    
     const mediaType = req.file.mimetype.startsWith('image/') ? 'photo' : 'video';
     const msg = { id: Date.now(), eventId: Number(eventId), fromReg, toReg, time: new Date().toISOString(), read: false, type: 'media', mediaType, url: '/uploads/' + finalName };
     if (!data.messages) data.messages = [];
