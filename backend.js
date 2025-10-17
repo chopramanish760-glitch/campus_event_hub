@@ -25,14 +25,41 @@ app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 const DATA_FILE = path.join(__dirname, "data.json");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+// Default admin can be overridden via env for cloud deployments
+const DEFAULT_ADMIN = {
+  username: process.env.ADMIN_USER || "Choraa03",
+  password: process.env.ADMIN_PASS || "Manish@2000",
+};
+// Ensure data.json exists on first boot (useful on stateless hosts)
+function ensureDataFile() {
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+      fs.writeFileSync(DATA_FILE, JSON.stringify(base, null, 2));
+    } else {
+      // If present but missing or different admin, set to default for operability
+      try {
+        const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+        if (!parsed.admin || parsed.admin.username !== DEFAULT_ADMIN.username || parsed.admin.password !== DEFAULT_ADMIN.password) {
+          parsed.admin = DEFAULT_ADMIN;
+          fs.writeFileSync(DATA_FILE, JSON.stringify(parsed, null, 2));
+        }
+      } catch {
+        const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+        fs.writeFileSync(DATA_FILE, JSON.stringify(base, null, 2));
+      }
+    }
+  } catch {}
+}
+ensureDataFile();
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
 function loadData() {
-  if (!fs.existsSync(DATA_FILE)) return { users: [], events: [], media: [], notifications: {}, messages: [], admin: { username: "Chopraa03", password: "Manish@2000" } };
+  if (!fs.existsSync(DATA_FILE)) return { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
-    return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || { username: "Chopraa03", password: "Manish@2000" } };
-  } catch { return { users: [], events: [], media: [], notifications: {}, messages: [], admin: { username: "Chopraa03", password: "Manish@2000" } }; }
+    return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
+  } catch { return { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN }; }
 }
 function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
 
@@ -63,7 +90,10 @@ app.post("/api/login", (req, res) => { const data = loadData(); const { regNumbe
 app.post("/api/admin/login", (req, res) => {
   const data = loadData();
   const { username, password } = req.body;
-  if (data.admin && data.admin.username === username && data.admin.password === password) {
+  const stored = data.admin || DEFAULT_ADMIN;
+  const userMatch = String(stored.username || '').toLowerCase() === String(username || '').toLowerCase();
+  const passMatch = String(stored.password || '') === String(password || '');
+  if (userMatch && passMatch) {
     return res.json({ ok: true });
   }
   return res.status(401).json({ ok: false, error: "Invalid admin credentials" });

@@ -79,7 +79,7 @@
   .media-item .play-icon { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; border: 2px solid rgba(255,255,255,0.8); }
   .delete-media-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; border: 1px solid white; z-index: 5; }
   .event-media-section, .event-list-section { margin-bottom: 24px; }
-  .sub-nav { display: flex; gap: 24px; margin-bottom: 24px; border-bottom: none; }
+  .sub-nav { display: flex; gap: 24px; margin-bottom: 24px; border-bottom: none; flex-wrap: wrap; row-gap: 10px; }
   .sub-nav-btn { background: none; border: 1px solid var(--border); color: var(--text-secondary); padding: 8px 16px; font-size: 1rem; cursor: pointer; border-radius: 10px; }
   .sub-nav-btn.active { color: var(--text-primary); border-color: var(--primary-accent); box-shadow: 0 0 0 1px rgba(124,58,237,0.25) inset; font-weight: bold; }
   .section-wrapper { border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 28px; }
@@ -147,7 +147,14 @@
 <script>
 // Configure API base. You can set it via URL once: ?api=https://your-backend.onrender.com
 (function(){ try{ const qs=new URLSearchParams(location.search); const api=qs.get('api'); if(api){ localStorage.setItem('API_BASE', api); } }catch(_){} })();
-const API_BASE = (typeof window!=='undefined' && (window.API_BASE || localStorage.getItem('API_BASE'))) || "https://your-backend.onrender.com";
+const API_BASE = (function(){
+  try{
+    const configured = (typeof window!=='undefined' && (window.API_BASE || localStorage.getItem('API_BASE')));
+    if(configured) return configured;
+    if(typeof window!=='undefined' && window.location && window.location.origin){ return window.location.origin; }
+  }catch{}
+  return "http://localhost:5000";
+})();
 // Force iframe maps to avoid API key issues on production
 const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
@@ -552,7 +559,8 @@ async function renderEvents() {
         if (upcomingEvents.length === 0) { sectionEl.innerHTML += `<p class="muted">No upcoming or live events right now.</p>`; }
         else {
             upcomingEvents.forEach(e => {
-                const isBooked = userTickets.some(t => t.eventId === e.id);
+                const bookedByMe = Array.isArray(e.bookings) && e.bookings.some(b => b.regNumber === currentUser.regNumber);
+                const isBooked = bookedByMe || userTickets.some(t => t.eventId === e.id);
                 const isCreator = currentUser.role === 'ORGANIZER' && e.creatorRegNumber === currentUser.regNumber;
                 const isFull = (e.taken || 0) >= (e.capacity || 0);
                 const isVolunteer = Array.isArray(e.volunteers) && e.volunteers.some(v => v.regNumber === currentUser.regNumber);
@@ -990,8 +998,12 @@ async function doSignup() {
         const data = await res.json();
         if (res.ok && data.ok) {
             if(user.role==='ORGANIZER'){
-                msg.textContent = "✅ Request sent for organizer verification. You can use the app as a student until approval.";
-                setTimeout(showLogin, 1500);
+                // Organizer requests are saved as STUDENT with organizerStatus=PENDING.
+                // Show centered 2s toast then auto-login and land on Home with Org tab disabled.
+                showCenterToast('✅ Request sent to admin for verification');
+                const pendingUser = data.user; // backend returns created user
+                try{ currentUser = pendingUser; saveUserSession(currentUser); }catch{}
+                renderTabs(); showTab('home');
                 return;
             }
             msg.textContent = "✅ Account created! Signing you in...";
@@ -1040,6 +1052,7 @@ async function bookTicketViaQr(eventId){
     const data = await res.json();
     if(res.ok && data.ok){
         alert("🎟️ Ticket booked via QR!");
+        try{ if(window.__eventsCache){ const ev = window.__eventsCache.find(e=>e.id===eventId); if(ev){ ev.bookings = Array.isArray(ev.bookings)?ev.bookings:[]; ev.bookings.push({ regNumber: currentUser.regNumber, seat: data.booking && data.booking.seat ? data.booking.seat : (ev.bookings.length+1) }); ev.taken = (ev.taken||0)+1; } } }catch{}
         await renderTickets(true);
         renderEvents();
         // Show ticket immediately
@@ -2703,6 +2716,7 @@ function showAdminLogin(){
         <span class="password-toggle" onclick="togglePasswordVisibility('adminPass')">👁️</span>
       </div>
       <button class="btn primary" onclick="doAdminLogin()">Login</button>
+      <button class="btn" onclick="showLogin()">Cancel</button>
       <div id="adminMsg" class="muted"></div>`;
     showTab('login');
 }
@@ -2746,6 +2760,11 @@ function setAdminTab(which){
   if(which==='verify'){ document.getElementById('tab-verify').classList.add('active'); renderAdminVerify(); }
   if(which==='you'){ document.getElementById('tab-you').classList.add('active'); renderAdminYou(); }
 }
+function adminLogout(){
+  try{ window.__isAdmin = false; }catch{}
+  try{ renderTabs(); }catch{}
+  try{ showLogin(); }catch{}
+}
 async function renderAdminUsers(which){
     const pane = document.getElementById('admin-content');
     const isStudents = which==='students';
@@ -2757,38 +2776,74 @@ async function renderAdminUsers(which){
        <button class="sub-nav-btn ${isStudents?'active':''}" onclick="renderAdminUsers('students')">Students</button>
        <button class="sub-nav-btn ${!isStudents?'active':''}" onclick="renderAdminUsers('organizers')">Organizers</button>
      </div>
-     <div>${list.map(u=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
+     <div>${list.map(u=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="adminOpenUser('${u.regNumber}')">
         <div><b>${capitalizeWords(u.name||'')} ${capitalizeWords(u.surname||'')}</b><div class="muted">${u.regNumber} • ${u.role}</div></div>
         <div style="display:flex; gap:8px;">
-          ${isStudents? `<button class="btn" onclick="adminDeleteStudent('${u.regNumber}')">Delete</button>`: `<button class="btn" onclick="adminRemoveOrganizer('${u.regNumber}')">Remove Ownership</button>`}
+          ${isStudents? `<button class=\"btn\" onclick=\"event.stopPropagation(); adminDeleteStudent('${u.regNumber}')\">Delete</button>`: `<button class=\"btn\" onclick=\"event.stopPropagation(); adminRemoveOrganizer('${u.regNumber}')\">Remove Ownership</button>`}
         </div>
      </div>`).join('')||'<p class="muted">No records.</p>'}</div>`;
+}
+async function adminOpenUser(regNumber){
+    try{
+        const res = await fetch(API + '/users/' + regNumber);
+        const data = await res.json();
+        const body = document.getElementById('modal-body');
+        if(!res.ok || !data.ok){ body.innerHTML = '<p class="muted">Failed to load user.</p>'; document.getElementById('modal').style.display='flex'; return; }
+        const u = data.user||{};
+        body.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><a class="map-back-arrow" onclick="closeModal()">←</a><h3 style="margin:0;">User Details</h3></div>
+          <div class="kv"><b>Name:</b> <span class="value">${escapeHtml((u.name||'') + ' ' + (u.surname||''))}</span><b>Reg:</b> <span class="value">${escapeHtml(u.regNumber||'')}</span><b>Role:</b> <span class="value">${escapeHtml(u.role||'')}</span></div>
+          <div class="kv"><b>Email:</b> <span class="value">${escapeHtml(u.email||'')}</span><b>Phone:</b> <span class="value">${escapeHtml(u.phone||'')}</span><b>Gender:</b> <span class="value">${escapeHtml(u.gender||'')}</span></div>
+          <div class="kv"><b>Age:</b> <span class="value">${escapeHtml(u.age||'')}</span><b>Department:</b> <span class="value">${escapeHtml(u.department||'-')}</span><b>Branch:</b> <span class="value">${escapeHtml(u.branch||'-')}</span></div>
+          <div class="kv"><b>Address:</b> <span class="value">${escapeHtml(u.address||'-')}</span><b>Pincode:</b> <span class="value">${escapeHtml(u.pincode||'-')}</span><b>Blood:</b> <span class="value">${escapeHtml(u.bloodGroup||'-')}</span></div>`;
+        document.getElementById('modal').style.display='flex';
+    }catch{ const body=document.getElementById('modal-body'); body.innerHTML='<p class="muted">Failed to load user.</p>'; document.getElementById('modal').style.display='flex'; }
 }
 async function adminRemoveOrganizer(reg){ if(!confirm('Remove organizer ownership?')) return; const r=await fetch(API+'/admin/organizers/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({regNumber:reg})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Removed'); renderAdminUsers('organizers'); renderAdminUsers('students'); } else alert('Error: '+(d.error||'Failed')); }
 async function adminDeleteStudent(reg){ if(!confirm('Delete this student account?')) return; const r=await fetch(API+'/admin/users/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({regNumber:reg})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Deleted'); renderAdminUsers('students'); } else alert('Error: '+(d.error||'Failed')); }
 
+let __adminMediaFilter = 'upcoming';
 async function renderAdminMedia(){
     const pane = document.getElementById('admin-content');
-    const evRes = await fetch(API+'/admin/events'); const evData = await evRes.json(); const events = evData.events||[];
+    const evRes = await fetch(API+'/admin/events'); const evData = await evRes.json(); let events = evData.events||[];
+    const today = new Date().toISOString().slice(0,10);
+    const isPast = (d)=> String(d.date) < today;
+    const isUpcoming = (d)=> String(d.date) >= today;
+    events = events.filter(e => __adminMediaFilter==='past' ? isPast(e) : isUpcoming(e));
     pane.innerHTML = `<h3>Media (by Event)</h3>
+      <div class="sub-nav">
+        <button class="sub-nav-btn ${__adminMediaFilter==='upcoming'?'active':''}" onclick="__adminMediaFilter='upcoming'; renderAdminMedia()">Upcoming</button>
+        <button class="sub-nav-btn ${__adminMediaFilter==='past'?'active':''}" onclick="__adminMediaFilter='past'; renderAdminMedia()">Past</button>
+      </div>
       ${events.map(e=>`<div class="card"><b>${capitalizeWords(e.title)}</b> • ${e.date}
         <div style="margin-top:8px;"><button class="btn" onclick="adminOpenEventMedia(${e.id})">Open Media</button></div></div>`).join('')||'<p class="muted">No events.</p>'}`;
 }
 async function adminOpenEventMedia(eventId){
     const r = await fetch(API+'/admin/media/'+eventId); const d = await r.json();
     const body = document.getElementById('modal-body');
-    body.innerHTML = `<h3>Event Media</h3>
-      ${(d.media||[]).map(m=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-        <div>${m.type==='photo'? '🖼️':'🎬'} ${m.name}</div>
-        <div><button class="btn" onclick="adminDeleteMedia(${m.id})">Delete</button></div>
-      </div>`).join('')||'<p class="muted">No media.</p>'}`;
+    const items = (d.media||[]);
+    const grid = items.length ? (`<div class="media-grid">${items.map(m=>{
+      const src = `${API_BASE}${m.url}`;
+      if(m.type==='photo') return `<div class=\"media-item\"><img src=\"${src}\" onclick=\"showLightbox('${m.url}','photo')\"><span class=\"delete-media-btn\" onclick=\"adminDeleteMedia(${m.id})\">✖</span></div>`;
+      return `<div class=\"media-item\"><video src=\"${src}\" onclick=\"showLightbox('${m.url}','video')\"></video><span class=\"delete-media-btn\" onclick=\"adminDeleteMedia(${m.id})\">✖</span></div>`;
+    }).join('')}</div>`) : '<p class="muted">No media.</p>';
+    body.innerHTML = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><a class="map-back-arrow" onclick="closeModal()">←</a><h3 style="margin:0;">Event Media</h3></div>${grid}`;
     document.getElementById('modal').style.display='flex';
 }
 async function adminDeleteMedia(id){ if(!confirm('Delete this media?')) return; const r=await fetch(API+'/admin/media/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mediaId:id})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Deleted'); closeModal(); renderAdminMedia(); } else alert('Error: '+(d.error||'Failed')); }
 
+let __adminEventsFilter = 'upcoming';
 async function renderAdminEvents(){
-    const pane = document.getElementById('admin-content'); const r=await fetch(API+'/admin/events'); const d=await r.json(); const list=d.events||[];
+    const pane = document.getElementById('admin-content'); const r=await fetch(API+'/admin/events'); const d=await r.json(); let list=d.events||[];
+    const today = new Date().toISOString().slice(0,10);
+    const isPast = (e)=> String(e.date) < today;
+    const isUpcoming = (e)=> String(e.date) >= today;
+    list = list.filter(e => __adminEventsFilter==='past' ? isPast(e) : isUpcoming(e));
     pane.innerHTML = `<h3>Events</h3>
+      <div class="sub-nav">
+        <button class="sub-nav-btn ${__adminEventsFilter==='upcoming'?'active':''}" onclick="__adminEventsFilter='upcoming'; renderAdminEvents()">Upcoming</button>
+        <button class="sub-nav-btn ${__adminEventsFilter==='past'?'active':''}" onclick="__adminEventsFilter='past'; renderAdminEvents()">Past</button>
+      </div>
       ${list.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
         <div><b>${capitalizeWords(e.title)}</b> • ${e.date} ${e.time} • ${capitalizeWords(e.venue)}</div>
         <div style="display:flex;gap:8px;"><button class="btn" onclick="adminOpenEvent(${e.id})">View</button><button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')">Delete</button></div>
@@ -2838,8 +2893,26 @@ async function renderAdminVerify(){
 }
 
 function showPendingUserDetails(regNumber) {
-  // This will show detailed user information in a modal
-  // Implementation can be added later if needed
+  (async()=>{
+    try{
+      const res = await fetch(API + '/users/' + regNumber);
+      const data = await res.json();
+      const body = document.getElementById('modal-body');
+      if(!res.ok || !data.ok){ body.innerHTML = '<p class="muted">Failed to load details.</p>'; document.getElementById('modal').style.display='flex'; return; }
+      const u = data.user||{};
+      body.innerHTML = `
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><a class="map-back-arrow" onclick="closeModal()">←</a><h3 style="margin:0;">User Details</h3></div>
+        <div class="kv"><b>Name:</b> <span class="value">${escapeHtml((u.name||'') + ' ' + (u.surname||''))}</span><b>Reg:</b> <span class="value">${escapeHtml(u.regNumber||'')}</span><b>Role:</b> <span class="value">${escapeHtml(u.role||'')}</span></div>
+        <div class="kv"><b>Email:</b> <span class="value">${escapeHtml(u.email||'')}</span><b>Phone:</b> <span class="value">${escapeHtml(u.phone||'')}</span><b>Gender:</b> <span class="value">${escapeHtml(u.gender||'')}</span></div>
+        <div class="kv"><b>Age:</b> <span class="value">${escapeHtml(u.age||'')}</span><b>Department:</b> <span class="value">${escapeHtml(u.department||'-')}</span><b>Branch:</b> <span class="value">${escapeHtml(u.branch||'-')}</span></div>
+        <div class="kv"><b>Address:</b> <span class="value">${escapeHtml(u.address||'-')}</span><b>Pincode:</b> <span class="value">${escapeHtml(u.pincode||'-')}</span><b>Blood:</b> <span class="value">${escapeHtml(u.bloodGroup||'-')}</span></div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button class="btn primary" onclick="adminApproveOrganizer('${regNumber}')">Approve</button>
+          <button class="btn" onclick="adminRejectOrganizer('${regNumber}')">Reject</button>
+        </div>`;
+      document.getElementById('modal').style.display='flex';
+    }catch{ const body=document.getElementById('modal-body'); body.innerHTML='<p class="muted">Failed to load details.</p>'; document.getElementById('modal').style.display='flex'; }
+  })();
 }
 
 async function adminApproveOrganizer(regNumber) {
@@ -2910,6 +2983,24 @@ function escapeHtml(s){
       .replace(/>/g,'&gt;')
       .replace(/"/g,'&quot;')
       .replace(/'/g,'&#39;');
+}
+</script>
+<script>
+// Center toast for short messages
+function showCenterToast(text){
+    try{
+        const phone = document.querySelector('.phone') || document.body;
+        let toast = document.getElementById('centerToast');
+        if(!toast){
+            toast = document.createElement('div'); toast.id='centerToast';
+            toast.style.position='absolute'; toast.style.top='50%'; toast.style.left='50%'; toast.style.transform='translate(-50%, -50%)';
+            toast.style.background='rgba(0,0,0,0.85)'; toast.style.color='#fff'; toast.style.padding='12px 16px'; toast.style.borderRadius='10px'; toast.style.zIndex='200'; toast.style.maxWidth='80%'; toast.style.textAlign='center';
+            phone.appendChild(toast);
+        }
+        toast.textContent = text;
+        toast.style.display='block';
+        setTimeout(()=>{ toast.style.display='none'; }, 2000);
+    }catch{}
 }
 </script>
 </body>
