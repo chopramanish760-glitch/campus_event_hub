@@ -651,6 +651,8 @@ app.post('/api/volunteers/remove', (req, res) => {
   const removed = event.volunteers.splice(idx, 1)[0];
   // Re-number volunteer IDs to keep them compact (optional)
   event.volunteers.forEach((v, i) => { v.volunteerId = `V${String(i+1).padStart(2,'0')}`; });
+  // Also remove any pending volunteer request entries for this user for this event
+  event.volunteerRequests = Array.isArray(event.volunteerRequests) ? event.volunteerRequests.filter(r => r.regNumber !== regNumber) : [];
   if (!data.notifications) data.notifications = {};
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `❌ Your volunteer role for '${event.title}' has been cancelled.`, time: new Date().toISOString(), read: false });
@@ -717,6 +719,45 @@ app.post('/api/volunteers/respond', (req, res) => {
   } else {
     return res.status(400).json({ ok: false, error: 'Invalid decision' });
   }
+});
+
+// User leaves volunteer role themselves
+app.post('/api/volunteers/leave', (req, res) => {
+  const data = loadData();
+  const { eventId, regNumber } = req.body;
+  const event = data.events.find(e => e.id === Number(eventId));
+  if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
+  event.volunteers = Array.isArray(event.volunteers) ? event.volunteers : [];
+  const idx = event.volunteers.findIndex(v => v.regNumber === regNumber);
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'You are not a volunteer for this event.' });
+  event.volunteers.splice(idx, 1);
+  // Re-number IDs
+  event.volunteers.forEach((v, i) => { v.volunteerId = `V${String(i+1).padStart(2,'0')}`; });
+  // Remove any pending requests for this user as well
+  event.volunteerRequests = Array.isArray(event.volunteerRequests) ? event.volunteerRequests.filter(r => r.regNumber !== regNumber) : [];
+  if (!data.notifications) data.notifications = {};
+  if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
+  data.notifications[regNumber].unshift({ msg: `🚪 You left the volunteer role for '${event.title}'.`, time: new Date().toISOString(), read: false });
+  if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
+  data.notifications[event.creatorRegNumber].unshift({ msg: `ℹ️ ${regNumber} left the volunteer role for '${event.title}'.`, time: new Date().toISOString(), read: false });
+  saveData(data);
+  res.json({ ok: true });
+});
+
+// --- Data backup endpoints (optional) ---
+app.get('/api/data/export', (req, res) => {
+  try{ const raw = fs.readFileSync(DATA_FILE, 'utf-8'); res.type('application/json').send(raw); } catch{ res.status(500).json({ ok:false }); }
+});
+app.post('/api/data/import', (req, res) => {
+  try{
+    const payload = req.body;
+    if(!payload || typeof payload !== 'object') return res.status(400).json({ ok:false, error:'Invalid payload' });
+    // Always preserve DEFAULT_ADMIN
+    const importData = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN, ...payload };
+    importData.admin = DEFAULT_ADMIN;
+    saveData(importData);
+    return res.json({ ok:true });
+  }catch{ res.status(500).json({ ok:false }); }
 });
 
 app.delete("/api/waitlist", (req, res) => {
