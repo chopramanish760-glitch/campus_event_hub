@@ -91,8 +91,8 @@ app.post("/api/admin/login", (req, res) => {
   const data = loadData();
   const { username, password } = req.body;
   const stored = data.admin || DEFAULT_ADMIN;
-  const userMatch = String(stored.username || '') === String(username || '');
-  const passMatch = String(stored.password || '') === String(password || '');
+  const userMatch = String(stored.username || '').toLowerCase() === String((username||'').trim()).toLowerCase();
+  const passMatch = String(stored.password || '') === String((password||''));
   if (userMatch && passMatch) {
     return res.json({ ok: true });
   }

@@ -952,7 +952,7 @@ function showForgotPassword() {
     showTab('login');
 }
 async function doLogin() {
-    const regNumber = document.getElementById("loginReg").value; const password = document.getElementById("loginPass").value;
+    const regNumber = String(document.getElementById("loginReg").value||'').trim(); const password = String(document.getElementById("loginPass").value||'');
     const msg = document.getElementById("loginMsg"); msg.textContent = "⏳ Logging in...";
     try {
         const res = await fetch(API + "/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regNumber, password }) });
@@ -991,7 +991,7 @@ async function doLogin() {
     } catch { msg.textContent = "❌ Network error"; }
 }
 async function doSignup() {
-    const user = { name: capitalizeWords(document.getElementById("name").value), surname: capitalizeWords(document.getElementById("surname").value), age: document.getElementById("age").value, gender: document.getElementById("gender").value, email: document.getElementById("email").value, phone: document.getElementById("phone").value, regNumber: document.getElementById("regNumber").value, password: document.getElementById("password").value, role: document.getElementById("role").value };
+    const user = { name: capitalizeWords(document.getElementById("name").value), surname: capitalizeWords(document.getElementById("surname").value), age: document.getElementById("age").value, gender: document.getElementById("gender").value, email: String(document.getElementById("email").value||'').trim(), phone: String(document.getElementById("phone").value||'').trim(), regNumber: String(document.getElementById("regNumber").value||'').trim(), password: document.getElementById("password").value, role: document.getElementById("role").value };
     const msg = document.getElementById("signupMsg"); msg.textContent = "⏳ Signing up...";
     try {
         const res = await fetch(API + "/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
