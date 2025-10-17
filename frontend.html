@@ -2803,6 +2803,7 @@ function renderAdmin(){
         <button class="sub-nav-btn" id="tab-events" onclick="setAdminTab('events')">Events</button>
         <button class="sub-nav-btn" id="tab-verify" onclick="setAdminTab('verify')">Verify</button>
         <button class="sub-nav-btn" id="tab-you" onclick="setAdminTab('you')">You</button>
+        <button class="sub-nav-btn" onclick="showDebugPanel()">🔧 Debug</button>
       </div>
       <div id="admin-content"></div>`;
     setAdminTab('users');
@@ -2821,22 +2822,75 @@ function adminLogout(){
   try{ showLogin(); }catch{}
 }
 async function renderAdminUsers(which){
-    const pane = document.getElementById('admin-content');
-    const isStudents = which==='students';
-    const url = isStudents ? '/admin/users' : '/admin/organizers';
-    const res = await fetch(API+url);
-    const data = await res.json();
-    const list = (data.users||[]);
-    pane.innerHTML = `<div class="sub-nav" style="margin-bottom:10px;">
+  const pane = document.getElementById('admin-content');
+  const isStudents = which==='students';
+  const url = isStudents ? '/admin/users' : '/admin/organizers';
+  const res = await fetch(API+url);
+  const data = await res.json();
+  const list = (data.users||[]);
+  
+  // Sort by last seen (most recent first)
+  list.sort((a, b) => {
+    const aLastSeen = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+    const bLastSeen = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+    return bLastSeen - aLastSeen;
+  });
+  
+  pane.innerHTML = `<div class="sub-nav" style="margin-bottom:10px;">
        <button class="sub-nav-btn ${isStudents?'active':''}" onclick="renderAdminUsers('students')">Students</button>
        <button class="sub-nav-btn ${!isStudents?'active':''}" onclick="renderAdminUsers('organizers')">Organizers</button>
      </div>
-     <div>${list.map(u=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="adminOpenUser('${u.regNumber}')">
-        <div><b>${capitalizeWords(u.name||'')} ${capitalizeWords(u.surname||'')}</b><div class="muted">${u.regNumber} • ${u.role}</div></div>
-        <div style="display:flex; gap:8px;">
-          ${isStudents? `<button class=\"btn\" onclick=\"event.stopPropagation(); adminDeleteStudent('${u.regNumber}')\">Delete</button>`: `<button class=\"btn\" onclick=\"event.stopPropagation(); adminRemoveOrganizer('${u.regNumber}')\">Remove Ownership</button>`}
+     <div style="margin-bottom: 16px;">
+       <p class="muted">Total ${isStudents ? 'Students' : 'Organizers'}: ${list.length}</p>
+     </div>
+     <div>${list.map(u=>{
+       const lastSeen = u.lastSeen ? new Date(u.lastSeen) : null;
+       const now = new Date();
+       let lastSeenText = 'Never';
+       let lastSeenColor = '#6b7280';
+       
+       if (lastSeen) {
+         const diffMs = now.getTime() - lastSeen.getTime();
+         const diffMins = Math.floor(diffMs / (1000 * 60));
+         const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+         const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+         
+         if (diffMins < 5) {
+           lastSeenText = 'Just now';
+           lastSeenColor = '#10b981';
+         } else if (diffMins < 60) {
+           lastSeenText = `${diffMins}m ago`;
+           lastSeenColor = '#10b981';
+         } else if (diffHours < 24) {
+           lastSeenText = `${diffHours}h ago`;
+           lastSeenColor = '#f59e0b';
+         } else if (diffDays < 7) {
+           lastSeenText = `${diffDays}d ago`;
+           lastSeenColor = '#f59e0b';
+         } else {
+           lastSeenText = lastSeen.toLocaleDateString();
+           lastSeenColor = '#6b7280';
+         }
+       }
+       
+       return `<div class="card" style="display:flex;justify-content:space-between;align-items:center;cursor:pointer; margin-bottom: 8px;" onclick="adminOpenUser('${u.regNumber}')">
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+            <b>${capitalizeWords(u.name||'')} ${capitalizeWords(u.surname||'')}</b>
+            <span class="category-badge" style="font-size: 0.8rem; padding: 2px 6px;">${u.role}</span>
+          </div>
+          <div class="muted" style="font-size: 0.9rem; margin-bottom: 4px;">${u.regNumber}</div>
+          <div style="font-size: 0.85rem;">
+            <span style="color: ${lastSeenColor}; font-weight: 500;">🕒 Last seen: ${lastSeenText}</span>
+            ${u.email ? `<br><span class="muted">📧 ${u.email}</span>` : ''}
+            ${u.phone ? `<br><span class="muted">📱 ${u.phone}</span>` : ''}
+          </div>
         </div>
-     </div>`).join('')||'<p class="muted">No records.</p>'}</div>`;
+        <div style="display:flex; gap:8px;">
+          ${isStudents? `<button class="btn" onclick="event.stopPropagation(); adminDeleteStudent('${u.regNumber}')" style="background: #ef4444; border-color: #ef4444; font-size: 0.9rem; padding: 6px 12px;">Delete</button>`: `<button class="btn" onclick="event.stopPropagation(); adminRemoveOrganizer('${u.regNumber}')" style="background: #f59e0b; border-color: #f59e0b; font-size: 0.9rem; padding: 6px 12px;">Remove Ownership</button>`}
+        </div>
+     </div>`;
+     }).join('')||'<p class="muted">No records.</p>'}</div>`;
 }
 async function adminOpenUser(regNumber){
     try{
@@ -2889,20 +2943,64 @@ async function adminDeleteMedia(id){ if(!confirm('Delete this media?')) return; 
 
 let __adminEventsFilter = 'upcoming';
 async function renderAdminEvents(){
-    const pane = document.getElementById('admin-content'); const r=await fetch(API+'/admin/events'); const d=await r.json(); let list=d.events||[];
+    const pane = document.getElementById('admin-content'); 
+    const r=await fetch(API+'/admin/events'); 
+    const d=await r.json(); 
+    let list=d.events||[];
     const today = new Date().toISOString().slice(0,10);
     const isPast = (e)=> String(e.date) < today;
     const isUpcoming = (e)=> String(e.date) >= today;
     list = list.filter(e => __adminEventsFilter==='past' ? isPast(e) : isUpcoming(e));
-    pane.innerHTML = `<h3>Events</h3>
+    
+    pane.innerHTML = `<h3>Events Management</h3>
       <div class="sub-nav">
         <button class="sub-nav-btn ${__adminEventsFilter==='upcoming'?'active':''}" onclick="__adminEventsFilter='upcoming'; renderAdminEvents()">Upcoming</button>
         <button class="sub-nav-btn ${__adminEventsFilter==='past'?'active':''}" onclick="__adminEventsFilter='past'; renderAdminEvents()">Past</button>
       </div>
-      ${list.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%"><b>${capitalizeWords(e.title)}</b> • ${e.date} ${e.time} • ${capitalizeWords(e.venue)}</div>
-        <div style="display:flex;gap:8px;"><button class="btn" onclick="adminOpenEvent(${e.id})">View</button><button class="btn" onclick="adminOpenEventBookings(${e.id}, '${e.creatorRegNumber}')">Bookings</button><button class="btn" onclick="adminOpenVolunteers(${e.id}, '${e.title.replace(/'/g,"&#39;")}', '${e.creatorRegNumber}')">Volunteers</button><button class="btn" onclick="adminOpenWaitlist(${e.id}, '${e.creatorRegNumber}', '${e.title.replace(/'/g,"&#39;")}')">Waitlist</button><button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')">Delete</button></div>
-      </div>`).join('')||'<p class="muted">No events.</p>'}`;
+      <div style="margin-bottom: 16px;">
+        <p class="muted">Total Events: ${list.length} | Showing: ${__adminEventsFilter}</p>
+      </div>
+      ${list.length === 0 ? '<p class="muted">No events found.</p>' : list.map(e=>{
+        const startTime = new Date(`${e.date}T${e.time}`);
+        const endTime = new Date(startTime.getTime() + (e.duration || 0) * 60000);
+        const now = new Date();
+        let status = "upcoming";
+        if (now >= startTime && now < endTime) status = "live";
+        else if (now >= endTime) status = "past";
+        
+        const statusColor = status === 'live' ? '#10b981' : status === 'past' ? '#6b7280' : '#3b82f6';
+        const statusText = status === 'live' ? '🔴 LIVE' : status === 'past' ? '✅ ENDED' : '⏳ UPCOMING';
+        
+        return `<div class="card" style="margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+            <div style="flex: 1; min-width: 0;">
+              <div class="category-badge" style="margin-bottom: 8px;">${e.category || 'General'}</div>
+              <h4 style="margin: 0 0 8px 0; color: #93c5fd; font-size: 1.1rem;">${capitalizeWords(e.title)}</h4>
+              <div class="kv" style="margin: 0;">
+                <b>Date:</b> <span class="value">${e.date}</span>
+                <b>Time:</b> <span class="value">${e.time}</span>
+                <b>Venue:</b> <span class="value">${capitalizeWords(e.venue)}</span>
+                <b>Capacity:</b> <span class="value">${e.taken || 0}/${e.capacity}</span>
+                <b>Duration:</b> <span class="value">${e.duration || 0} min</span>
+                <b>Status:</b> <span class="value" style="color: ${statusColor}; font-weight: bold;">${statusText}</span>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px; margin-left: 16px;">
+              <button class="btn" onclick="adminOpenEvent(${e.id})" style="font-size: 0.9rem; padding: 6px 12px;">👁️ View</button>
+              <button class="btn" onclick="adminOpenEventBookings(${e.id}, '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 6px 12px;">📋 Bookings</button>
+              <button class="btn" onclick="adminOpenVolunteers(${e.id}, '${e.title.replace(/'/g,"&#39;")}', '${e.creatorRegNumber}')" style="font-size: 0.9rem; padding: 6px 12px;">🤝 Volunteers</button>
+              <button class="btn" onclick="adminOpenWaitlist(${e.id}, '${e.creatorRegNumber}', '${e.title.replace(/'/g,"&#39;")}')" style="font-size: 0.9rem; padding: 6px 12px;">🕒 Waitlist</button>
+              <button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')" style="font-size: 0.9rem; padding: 6px 12px; background: #ef4444; border-color: #ef4444;">🗑️ Delete</button>
+            </div>
+          </div>
+          <div style="border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px;">
+            <div class="muted" style="font-size: 0.9rem;">
+              Created by: ${e.creatorRegNumber} | ID: ${e.id}
+              ${e.resources && e.resources.length > 0 ? ` | Resources: ${e.resources.join(', ')}` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}`;
 }
 async function adminOpenEvent(eventId){ const events=(await (await fetch(API+'/admin/events')).json()).events||[]; const ev=events.find(x=>x.id===Number(eventId)); const body=document.getElementById('modal-body'); if(!ev){return} body.innerHTML=`<h3>${capitalizeWords(ev.title)}</h3><div class="kv"><b>Organizer:</b> <span class="value">${ev.creatorRegNumber||'-'}</span><b>Date:</b><span class="value">${ev.date}</span><b>Time:</b><span class="value">${ev.time}</span><b>Venue:</b><span class="value">${capitalizeWords(ev.venue)}</span><b>Capacity:</b><span class="value">${ev.capacity}</span><b>Taken:</b><span class="value">${ev.taken}</span></div><div class="card-buttons" style="margin-top:8px;"><button class="btn" onclick="adminOpenEventBookings(${ev.id}, '${ev.creatorRegNumber}')">View Bookings</button><button class="btn" onclick="adminOpenVolunteers(${ev.id}, '${ev.title.replace(/'/g,"&#39;")}', '${ev.creatorRegNumber}')">🤝 Volunteers</button><button class="btn" onclick="adminOpenWaitlist(${ev.id}, '${ev.creatorRegNumber}', '${ev.title.replace(/'/g,"&#39;")}')">🕒 Waitlist</button></div>`; document.getElementById('modal').style.display='flex'; }
 
@@ -3037,6 +3135,109 @@ function renderAdminYou(){ const pane=document.getElementById('admin-content'); 
 async function adminSaveCreds(){ const username=document.getElementById('admUser').value; const password=document.getElementById('admPass').value; const r=await fetch(API+'/admin/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Saved'); } else alert('Error: '+(d.error||'Failed')); }
 async function adminClearAll(){ if(!confirm('This will delete all users, events, media, and notifications. Continue?')) return; const r=await fetch(API+'/admin/clear-all',{method:'POST'}); const d=await r.json(); if(r.ok&&d.ok){ alert('All data cleared'); setAdminTab('users'); } else alert('Error: '+(d.error||'Failed')); }
 async function adminLoadStats(){ try{ const r=await fetch(API+'/admin/stats'); const d=await r.json(); if(r.ok&&d.ok){ document.getElementById('adminStats').textContent = `Users: ${d.totalUsers} • Organizers: ${d.totalOrganizers} • Events: ${d.totalEvents} • Active (5m): ${d.activeUsers}`; } }catch{} }
+
+// ---------- Debug & Data Management ----------
+async function checkBackendStatus() {
+    try {
+        const res = await fetch(API + '/data/status');
+        const data = await res.json();
+        if (data.ok) {
+            console.log('📊 Backend Status:', data.stats);
+            return data.stats;
+        }
+    } catch (err) {
+        console.error('❌ Backend status check failed:', err);
+    }
+    return null;
+}
+
+async function checkDataIntegrity() {
+    try {
+        const res = await fetch(API + '/data/integrity');
+        const data = await res.json();
+        if (data.ok) {
+            console.log('🔍 Data Integrity:', data.integrity);
+            return data.integrity;
+        }
+    } catch (err) {
+        console.error('❌ Data integrity check failed:', err);
+    }
+    return null;
+}
+
+async function exportData() {
+    try {
+        const res = await fetch(API + '/data/export');
+        const data = await res.text();
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `campus-event-hub-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        alert('✅ Data exported successfully!');
+    } catch (err) {
+        alert('❌ Export failed: ' + err.message);
+    }
+}
+
+async function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            const res = await fetch(API + '/data/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: text
+            });
+            const result = await res.json();
+            if (result.ok) {
+                alert('✅ Data imported successfully! ' + result.message);
+                location.reload();
+            } else {
+                alert('❌ Import failed: ' + result.error);
+            }
+        } catch (err) {
+            alert('❌ Invalid file: ' + err.message);
+        }
+    };
+    input.click();
+}
+
+function showDebugPanel() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3>🔧 Debug & Data Management</h3>
+            <div class="kv">
+                <b>API Base:</b> <span class="value">${API_BASE}</span>
+                <b>Current User:</b> <span class="value">${currentUser ? currentUser.regNumber : 'Not logged in'}</span>
+            </div>
+            <div style="margin: 20px 0;">
+                <button class="btn" onclick="checkBackendStatus().then(s => alert('Status: ' + JSON.stringify(s, null, 2)))">📊 Check Backend Status</button>
+                <button class="btn" onclick="checkDataIntegrity().then(i => alert('Integrity: ' + JSON.stringify(i, null, 2)))">🔍 Check Data Integrity</button>
+                <button class="btn" onclick="exportData()">📤 Export Data</button>
+                <button class="btn" onclick="importData()">📥 Import Data</button>
+            </div>
+            <div style="margin: 20px 0;">
+                <h4>Quick Actions:</h4>
+                <button class="btn" onclick="localStorage.clear(); alert('Local storage cleared')">🗑️ Clear Local Storage</button>
+                <button class="btn" onclick="location.reload()">🔄 Reload Page</button>
+            </div>
+            <button class="btn" onclick="this.closest('.modal').remove()">Close</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
 </script>
 <script>
 function escapeHtml(s){

@@ -56,6 +56,33 @@ ensureDataFile();
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
 
+// Auto-backup system - saves data every 5 minutes
+setInterval(() => {
+  try {
+    const data = loadData();
+    if (data && (data.users?.length > 0 || data.events?.length > 0)) {
+      console.log('🔄 Auto-backup triggered...');
+      saveData(data);
+    }
+  } catch (err) {
+    console.error('❌ Auto-backup failed:', err);
+  }
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// Helper function to update user last seen
+function updateUserLastSeen(regNumber) {
+  try {
+    const data = loadData();
+    const user = data.users.find(u => u.regNumber === regNumber);
+    if (user) {
+      user.lastSeen = new Date().toISOString();
+      saveData(data);
+    }
+  } catch (err) {
+    console.error('Failed to update last seen:', err);
+  }
+}
+
 function loadData() {
   const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   if (!fs.existsSync(DATA_FILE)) return base;
@@ -76,31 +103,102 @@ function loadData() {
     return base;
   }
 }
+// Enhanced data persistence with multiple safeguards
 function saveData(data) {
   try {
+    console.log(`💾 Saving data to ${DATA_FILE}...`);
+    
+    // Validate data before saving
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid data structure');
+    }
+    
+    // Ensure required fields exist
+    const validatedData = {
+      users: Array.isArray(data.users) ? data.users : [],
+      events: Array.isArray(data.events) ? data.events : [],
+      media: Array.isArray(data.media) ? data.media : [],
+      notifications: data.notifications && typeof data.notifications === 'object' ? data.notifications : {},
+      messages: Array.isArray(data.messages) ? data.messages : [],
+      admin: data.admin || DEFAULT_ADMIN
+    };
+    
     // Create rotating backup before writing
     if (fs.existsSync(DATA_FILE)) {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupName = `data-${stamp}.json`;
-      fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, backupName));
-      // rotate to last 10 backups
+      const backupPath = path.join(BACKUP_DIR, backupName);
+      fs.copyFileSync(DATA_FILE, backupPath);
+      console.log(`📦 Backup created: ${backupName}`);
+      
+      // Also create a "latest" backup for quick recovery
+      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
+      fs.copyFileSync(DATA_FILE, latestBackup);
+      
+      // rotate to last 20 backups (increased from 10)
       try {
-        const list = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort();
-        const toDelete = list.length - 10;
+        const list = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json') && f !== 'data-latest.json').sort();
+        const toDelete = list.length - 20;
         if (toDelete > 0) {
           for (let i = 0; i < toDelete; i++) {
             try { fs.unlinkSync(path.join(BACKUP_DIR, list[i])); } catch {}
           }
+          console.log(`🗑️ Cleaned up ${toDelete} old backups`);
         }
       } catch {}
     }
+    
     // Atomic write via temp file then rename
     const tmp = DATA_FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    const jsonString = JSON.stringify(validatedData, null, 2);
+    fs.writeFileSync(tmp, jsonString);
+    
+    // Verify the written file is valid JSON
+    try {
+      JSON.parse(fs.readFileSync(tmp, 'utf-8'));
+    } catch (err) {
+      throw new Error('Written file is not valid JSON');
+    }
+    
     fs.renameSync(tmp, DATA_FILE);
-  } catch {
+    
+    // Verify the final file
+    try {
+      const finalData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+      console.log(`✅ Data saved successfully (${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media)`);
+      
+      // Update latest backup after successful save
+      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
+      fs.copyFileSync(DATA_FILE, latestBackup);
+      
+    } catch (err) {
+      console.error('❌ Final verification failed:', err);
+      throw err;
+    }
+    
+  } catch (err) {
+    console.error('❌ Failed to save data:', err);
+    
+    // Try to restore from latest backup
+    try {
+      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
+      if (fs.existsSync(latestBackup)) {
+        console.log('🔄 Attempting to restore from latest backup...');
+        fs.copyFileSync(latestBackup, DATA_FILE);
+        console.log('✅ Restored from backup');
+      }
+    } catch (restoreErr) {
+      console.error('❌ Backup restore also failed:', restoreErr);
+    }
+    
     // Fallback best-effort
-    try { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); } catch {}
+    try { 
+      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); 
+      console.log('⚠️ Used fallback save method');
+    } catch (fallbackErr) {
+      console.error('❌ Fallback save also failed:', fallbackErr);
+      throw new Error('All save methods failed');
+    }
   }
 }
 
@@ -163,6 +261,11 @@ app.post("/api/login", (req, res) => {
   const password = String((req.body.password||''));
   const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
   if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
+  
+  // Update last seen on login
+  user.lastSeen = new Date().toISOString();
+  saveData(data);
+  
   res.json({ ok: true, user });
 });
 app.post("/api/admin/login", (req, res) => {
@@ -194,6 +297,10 @@ app.post("/api/reset-password", (req, res) => {
   user.password = newPassword; if (!data.notifications) data.notifications = {}; if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: "🔐 Your password has been successfully reset.", time: new Date().toISOString(), read: false });
   saveData(data);
+  
+  // Update user's last seen
+  updateUserLastSeen(regNumber);
+  
   try {
     broadcast('events_changed', { reason: 'ticket_cancelled', eventId: event.id });
     broadcast('tickets_changed', { reason: 'cancelled', eventId: event.id }, regNumber);
@@ -332,6 +439,10 @@ app.post("/api/events", (req, res) => {
   });
   // No volunteer notifications at creation time
   saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(creatorRegNumber);
+  
   try { broadcast('events_changed', { reason: 'created', eventId: newEvent.id }); } catch {}
   res.json({ ok: true, event: newEvent });
 });
@@ -410,6 +521,10 @@ app.put("/api/events/:id", (req, res) => {
     data.notifications[booking.regNumber].unshift({ msg: notificationMsg, time: new Date().toISOString(), read: false });
   });
   saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(regNumber);
+  
   try { broadcast('events_changed', { reason: 'updated', eventId: event.id }); } catch {}
   res.json({ ok: true, event });
 });
@@ -434,6 +549,10 @@ app.delete("/api/events/:id", (req, res) => {
   });
   data.events.splice(eventIndex, 1);
   saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(regNumber);
+  
   try { broadcast('events_changed', { reason: 'deleted', eventId: id }); } catch {}
   res.json({ ok: true, message: "Event and associated media deleted successfully" });
 });
@@ -513,6 +632,10 @@ app.post("/api/tickets", (req, res) => {
   const notifMsg = booking.via === 'qr' ? `🎟️ You booked a ticket via QR code for ${event.title}` : `🎟️ You booked a ticket for ${event.title}`;
   data.notifications[regNumber].unshift({ msg: notifMsg, time: new Date().toISOString(), read: false });
   saveData(data);
+  
+  // Update user's last seen
+  updateUserLastSeen(regNumber);
+  
   try {
     broadcast('events_changed', { reason: 'ticket_booked', eventId: event.id });
     broadcast('tickets_changed', { reason: 'booked', eventId: event.id }, regNumber);
@@ -543,7 +666,16 @@ app.delete("/api/tickets", (req, res) => {
       data.notifications[user.regNumber].unshift({ msg: `✅ A seat opened up for '${event.title}'. You have been auto-booked from the waitlist.`, time: new Date().toISOString(), read: false });
     }
   }
-  saveData(data); res.json({ ok: true });
+  saveData(data);
+  
+  // Update user's last seen
+  updateUserLastSeen(regNumber);
+  
+  try {
+    broadcast('events_changed', { reason: 'ticket_cancelled', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'cancelled', eventId: event.id }, regNumber);
+  } catch {}
+  res.json({ ok: true });
 });
 
 // Organizer cancels a specific user's ticket for an event
@@ -649,6 +781,10 @@ app.post("/api/waitlist", (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `📝 You joined the waitlist for '${event.title}'. We'll auto-book if a seat opens.`, time: new Date().toISOString(), read: false });
   saveData(data);
+  
+  // Update user's last seen
+  updateUserLastSeen(regNumber);
+  
   try {
     broadcast('events_changed', { reason: 'waitlist_joined', eventId: event.id });
     broadcast('tickets_changed', { reason: 'waitlist_joined', eventId: event.id }, regNumber);
@@ -721,6 +857,10 @@ app.post('/api/volunteers/add', (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `🤝 Organizer invited you to volunteer for '${event.title}' as '${roleName}'.`, time: new Date().toISOString(), read: false, type: 'volunteer_request', eventId: event.id, role: roleName });
   saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(organizerReg);
+  
   res.json({ ok: true, request });
 });
 
@@ -745,6 +885,10 @@ app.post('/api/volunteers/remove', (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `❌ Your volunteer role for '${event.title}' has been cancelled.`, time: new Date().toISOString(), read: false });
   saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(organizerReg);
+  
   try { broadcast('events_changed', { reason: 'volunteer_removed', eventId: event.id }); } catch {}
   res.json({ ok: true, removed });
 });
@@ -795,6 +939,10 @@ app.post('/api/volunteers/respond', (req, res) => {
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `✅ ${regNumber} accepted volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     saveData(data);
+    
+    // Update user's last seen
+    updateUserLastSeen(regNumber);
+    
     try { broadcast('events_changed', { reason: 'volunteer_accepted', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'accepted', volunteer });
   } else if (decision === 'reject') {
@@ -805,6 +953,10 @@ app.post('/api/volunteers/respond', (req, res) => {
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `❌ ${regNumber} rejected volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     saveData(data);
+    
+    // Update user's last seen
+    updateUserLastSeen(regNumber);
+    
     try { broadcast('events_changed', { reason: 'volunteer_rejected', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'rejected' });
   } else {
@@ -837,8 +989,15 @@ app.post('/api/volunteers/leave', (req, res) => {
 
 // --- Data backup endpoints (optional) ---
 app.get('/api/data/export', (req, res) => {
-  try{ const raw = fs.readFileSync(DATA_FILE, 'utf-8'); res.type('application/json').send(raw); } catch{ res.status(500).json({ ok:false }); }
+  try{ 
+    const raw = fs.readFileSync(DATA_FILE, 'utf-8'); 
+    res.type('application/json').send(raw); 
+  } catch(err){ 
+    console.error('Export failed:', err);
+    res.status(500).json({ ok:false, error: 'Export failed' }); 
+  }
 });
+
 app.post('/api/data/import', (req, res) => {
   try{
     const payload = req.body;
@@ -847,8 +1006,57 @@ app.post('/api/data/import', (req, res) => {
     const importData = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN, ...payload };
     importData.admin = DEFAULT_ADMIN;
     saveData(importData);
-    return res.json({ ok:true });
-  }catch{ res.status(500).json({ ok:false }); }
+    console.log(`📥 Data imported: ${importData.users?.length || 0} users, ${importData.events?.length || 0} events`);
+    return res.json({ ok:true, message: `Imported ${importData.users?.length || 0} users and ${importData.events?.length || 0} events` });
+  }catch(err){ 
+    console.error('Import failed:', err);
+    res.status(500).json({ ok:false, error: 'Import failed' }); 
+  }
+});
+
+// Data integrity check endpoint
+app.get('/api/data/integrity', (req, res) => {
+  try {
+    const data = loadData();
+    const issues = [];
+    
+    // Check for data consistency
+    if (!Array.isArray(data.users)) issues.push('Users array is invalid');
+    if (!Array.isArray(data.events)) issues.push('Events array is invalid');
+    if (!Array.isArray(data.media)) issues.push('Media array is invalid');
+    if (!Array.isArray(data.messages)) issues.push('Messages array is invalid');
+    if (typeof data.notifications !== 'object') issues.push('Notifications object is invalid');
+    
+    // Check for orphaned data
+    const eventIds = new Set(data.events.map(e => e.id));
+    const orphanedMedia = data.media.filter(m => !eventIds.has(m.eventId));
+    if (orphanedMedia.length > 0) issues.push(`${orphanedMedia.length} orphaned media files`);
+    
+    // Check for invalid event references
+    const userRegs = new Set(data.users.map(u => u.regNumber));
+    const invalidEventCreators = data.events.filter(e => !userRegs.has(e.creatorRegNumber));
+    if (invalidEventCreators.length > 0) issues.push(`${invalidEventCreators.length} events with invalid creators`);
+    
+    const result = {
+      ok: true,
+      integrity: {
+        issues: issues,
+        isHealthy: issues.length === 0,
+        stats: {
+          users: data.users?.length || 0,
+          events: data.events?.length || 0,
+          media: data.media?.length || 0,
+          messages: data.messages?.length || 0,
+          notifications: Object.keys(data.notifications || {}).length
+        }
+      }
+    };
+    
+    res.json(result);
+  } catch (err) {
+    console.error('Integrity check failed:', err);
+    res.status(500).json({ ok: false, error: 'Integrity check failed' });
+  }
 });
 
 app.delete("/api/waitlist", (req, res) => {
@@ -902,7 +1110,13 @@ app.post("/api/media", upload.single("file"), (req, res) => {
   fs.renameSync(req.file.path, finalPath);
   const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
   const media = { id: Date.now(), eventId: parseInt(eventId), name: req.file.originalname, url: "/uploads/" + finalName, type };
-  data.media.push(media); saveData(data); res.json({ ok: true, media });
+  data.media.push(media); 
+  saveData(data);
+  
+  // Update organizer's last seen
+  updateUserLastSeen(regNumber);
+  
+  res.json({ ok: true, media });
 });
 app.delete("/api/media/:mediaId", (req, res) => {
   const data = loadData(); const mediaId = parseInt(req.params.mediaId); const { regNumber } = req.body;
@@ -940,6 +1154,10 @@ app.put("/api/profile", (req, res) => {
   if (pincode) data.users[userIndex].pincode = pincode;
   
   saveData(data);
+  
+  // Update user's last seen
+  updateUserLastSeen(regNumber);
+  
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
 });
 
