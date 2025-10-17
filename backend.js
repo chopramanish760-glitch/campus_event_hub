@@ -65,7 +65,15 @@ function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null,
 
 app.post("/api/signup", (req, res) => {
   const data = loadData();
-  const { name, surname, age, gender, email, phone, regNumber, password, role } = req.body;
+  const name = String(req.body.name||'');
+  const surname = String(req.body.surname||'');
+  const age = req.body.age;
+  const gender = req.body.gender;
+  const email = String(req.body.email||'').trim();
+  const phone = String(req.body.phone||'').trim();
+  const regNumber = String(req.body.regNumber||'').trim();
+  const password = String(req.body.password||'');
+  const role = req.body.role;
   if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
   // Uniqueness validation across all users
   if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
@@ -106,6 +114,15 @@ app.post("/api/admin/login", (req, res) => {
     return res.json({ ok: true });
   }
   return res.status(401).json({ ok: false, error: "Invalid admin credentials" });
+});
+
+// Admin: reveal current admin username (no password) to help diagnose mismatches
+app.get('/api/admin/who', (req,res)=>{
+  try{
+    const d = loadData();
+    const stored = d.admin || DEFAULT_ADMIN;
+    res.json({ ok:true, username: stored.username || DEFAULT_ADMIN.username });
+  }catch{ res.status(500).json({ ok:false }); }
 });
 app.post("/api/reset-password", (req, res) => {
   const data = loadData(); const { regNumber, role, newPassword } = req.body;
