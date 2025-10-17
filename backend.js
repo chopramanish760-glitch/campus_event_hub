@@ -27,7 +27,7 @@ const DATA_FILE = path.join(__dirname, "data.json");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
 // Default admin can be overridden via env for cloud deployments
 const DEFAULT_ADMIN = {
-  username: process.env.ADMIN_USER || "Choraa03",
+  username: process.env.ADMIN_USER || "Chopraa03",
   password: process.env.ADMIN_PASS || "Manish@2000",
 };
 // Ensure data.json exists on first boot (useful on stateless hosts)
@@ -91,7 +91,7 @@ app.post("/api/admin/login", (req, res) => {
   const data = loadData();
   const { username, password } = req.body;
   const stored = data.admin || DEFAULT_ADMIN;
-  const userMatch = String(stored.username || '').toLowerCase() === String(username || '').toLowerCase();
+  const userMatch = String(stored.username || '') === String(username || '');
   const passMatch = String(stored.password || '') === String(password || '');
   if (userMatch && passMatch) {
     return res.json({ ok: true });
@@ -187,7 +187,7 @@ app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData()
 
 // Admin clear-all (dangerous): wipes users, events, media, notifications, messages, and uploads folder
 app.post('/api/admin/clear-all', (req,res)=>{
-  const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: loadData().admin };
+  const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   // wipe uploads directory files
   try { if (fs.existsSync(UPLOAD_DIR)) { fs.readdirSync(UPLOAD_DIR).forEach(f=>{ try{ fs.unlinkSync(path.join(UPLOAD_DIR,f)); }catch{} }); } } catch{}
   saveData(base);
