@@ -1017,6 +1017,31 @@ app.post('/api/data/import', (req, res) => {
   }
 });
 
+// Data status endpoint
+app.get('/api/data/status', (req, res) => {
+  try {
+    const data = loadData();
+    const fileStats = fs.existsSync(DATA_FILE) ? fs.statSync(DATA_FILE) : null;
+    const backupCount = fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
+    
+    res.json({
+      ok: true,
+      stats: {
+        users: data.users?.length || 0,
+        events: data.events?.length || 0,
+        media: data.media?.length || 0,
+        messages: data.messages?.length || 0,
+        notifications: Object.keys(data.notifications || {}).length,
+        dataFileExists: fs.existsSync(DATA_FILE),
+        lastModified: fileStats ? fileStats.mtime.toISOString() : null,
+        backupCount: backupCount
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // Data integrity check endpoint
 app.get('/api/data/integrity', (req, res) => {
   try {
