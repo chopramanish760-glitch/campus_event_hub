@@ -159,7 +159,7 @@ const API_BASE = (function(){
 const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
 const GOOGLE_MAPS_API_KEY = "AIzaSyAEze6N-tLo6Da6KU-PLcFBQ4zL3eT0BT0";
-let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null;
+let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null;
 let welcomeBannerUntil = 0;
 let lastUpcomingCount = -1;
 let currentHomeView = 'upcoming'; let currentMediaView = 'upcoming';
@@ -285,7 +285,8 @@ function logout() {
     renderTabs(); 
     render(); 
 }
-function closeModal() { document.getElementById("modal").style.display = "none"; }
+function closeModal() { document.getElementById("modal").style.display = "none"; try{ Object.values(__modalIntervals).forEach(id=>{ try{ clearInterval(id); }catch{} }); __modalIntervals = {}; }catch{} }
+function startModalPoll(key, fn, ms){ try{ if(__modalIntervals[key]){ clearInterval(__modalIntervals[key]); } __modalIntervals[key] = setInterval(()=>{ try{ fn(); }catch{} }, ms||3000); }catch{} }
 
 // ---------- Chat (Student & Organizer) ----------
 function openEventChat(eventId, title, organizerReg){
@@ -306,6 +307,7 @@ function openEventChat(eventId, title, organizerReg){
     `;
     document.getElementById('modal').style.display = 'flex';
     loadChatThread(eventId, currentUser.regNumber, organizerReg);
+    startModalPoll(`chat-${eventId}-${currentUser.regNumber}-${organizerReg}`, ()=>loadChatThread(eventId, currentUser.regNumber, organizerReg), 3000);
 }
 
 async function openVolunteerConfirm(eventId){
@@ -981,6 +983,8 @@ async function doLogin() {
                 eventStateInterval = setInterval(checkEventStates, 30000);
                 // Start event start notifications checker
                 setInterval(checkEventStartNotifications, 60000); // Check every minute
+                // Start live updates stream
+                try { startLiveUpdates(); } catch (e) { console.warn('SSE unavailable', e); }
                 renderTabs(); 
                 showTab("home");
                 
@@ -989,6 +993,41 @@ async function doLogin() {
             }, 1000);
         } else { msg.textContent = "❌ " + (data.error || "Login failed"); }
     } catch { msg.textContent = "❌ Network error"; }
+}
+
+// ---------- Live Updates via SSE ----------
+function startLiveUpdates(){
+    try{ if(__eventSource) { __eventSource.close(); __eventSource = null; } }catch{}
+    if(!window.EventSource) return; // old browsers fallback to polling already in place
+    const url = API + '/stream' + (currentUser && currentUser.regNumber ? ('?reg='+encodeURIComponent(currentUser.regNumber)) : '');
+    const es = new EventSource(url);
+    __eventSource = es;
+    es.addEventListener('hello', ()=>{});
+    es.addEventListener('ping', ()=>{});
+    // Events or tickets changed -> refresh lightweight
+    const refresh = async () => {
+        try{
+            const currentScreen = document.querySelector('.content[style*="block"]');
+            if(currentScreen){
+                const id = currentScreen.id.replace('screen-','');
+                if(id==='home'){ await renderEvents(); }
+                if(id==='tickets'){ await renderTickets(true); renderTickets(); }
+                if(id==='organizer'){ await renderOrganizer(); }
+            }
+            // Also keep countdowns fresh
+            try { startCountdownTimers && startCountdownTimers(); } catch {}
+        }catch{}
+    };
+    es.addEventListener('events_changed', refresh);
+    es.addEventListener('tickets_changed', (e)=>{
+        try{
+            const data = JSON.parse(e.data||'{}');
+            if(currentUser && data && data.eventId){
+                refresh();
+            }
+        }catch{ refresh(); }
+    });
+    es.onerror = () => { try{ es.close(); }catch{}; __eventSource=null; setTimeout(()=>{ try{ startLiveUpdates(); }catch{} }, 5000); };
 }
 async function doSignup() {
     const user = { name: capitalizeWords(document.getElementById("name").value), surname: capitalizeWords(document.getElementById("surname").value), age: document.getElementById("age").value, gender: document.getElementById("gender").value, email: String(document.getElementById("email").value||'').trim(), phone: String(document.getElementById("phone").value||'').trim(), regNumber: String(document.getElementById("regNumber").value||'').trim(), password: document.getElementById("password").value, role: document.getElementById("role").value };
@@ -1580,6 +1619,7 @@ function openVolunteersModal(eventId, title){
     `;
     modal.style.display = 'flex';
     loadVolunteersList(eventId);
+    try{ if(__modalIntervals[`vol-${eventId}`]) clearInterval(__modalIntervals[`vol-${eventId}`]); __modalIntervals[`vol-${eventId}`] = setInterval(()=>{ try{ loadVolunteersList(eventId); }catch{} }, 5000); }catch{}
 }
 async function loadVolunteersList(eventId){
     try{
@@ -1747,6 +1787,7 @@ function openOrganizerThread(eventId, studentReg, studentName){
     `;
     document.getElementById('modal').style.display = 'flex';
     loadChatThread(eventId, currentUser.regNumber, studentReg);
+  try{ if(__modalIntervals[`org-chat-${eventId}-${currentUser.regNumber}-${studentReg}`]) clearInterval(__modalIntervals[`org-chat-${eventId}-${currentUser.regNumber}-${studentReg}`]); __modalIntervals[`org-chat-${eventId}-${currentUser.regNumber}-${studentReg}`] = setInterval(()=>{ try{ loadChatThread(eventId, currentUser.regNumber, studentReg); }catch{} }, 3000); }catch{}
 }
 
 async function sendOrganizerReply(eventId, studentReg){
@@ -1937,7 +1978,7 @@ async function handleNotificationClick(notif){
 async function markAllAsRead(){await fetch(API+"/notifications/mark-read",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})}),renderNotifications(),pollNotifications()}
 async function pollNotifications(){if(!currentUser)return;try{try{const u=await fetch(API+"/users/"+currentUser.regNumber);if(u.status===404){alert('Your account has been deleted. Logging out.');logout();return;}}catch(_){}const e=await fetch(API+"/notifications/"+currentUser.regNumber),t=await e.json();const n=document.getElementById("notificationTicker");const tickerTextEl=document.getElementById("notificationTickerText");const now=Date.now();const bannerActive=now<welcomeBannerUntil;if(t.ok&&t.notifications.length>0){const r=t.notifications.filter(e=>!e.read).length;if(r>0&&!bannerActive){tickerTextEl.textContent=`🔔 You have ${r} unread notification(s)! Click to view.`;if(document.getElementById("screen-notifications").style.display!=="block"){n.style.display="block";tickerTextEl.style.animationPlayState='running';}}else if(!bannerActive){n.style.display="none";tickerTextEl.style.animationPlayState='paused';tickerTextEl.style.transform='translateX(0)';}}else if(!bannerActive){n.style.display="none"}}catch(e){}}
 function parseEventDateTime(e,t){if(!t)return new Date(e);if(/am|pm/i.test(t)){let[n,a]=t.split(" ");let[i,o]=n.split(":").map(Number);"PM"===a.toUpperCase()&&i<12&&(i+=12),"AM"===a.toUpperCase()&&12===i&&(i=0);return new Date(`${e}T${String(i).padStart(2,"0")}:${o.toString().padStart(2,"0")}:00`)}return new Date(`${e}T${t}:00`)}
-async function showEventBookings(e){const t=await fetch(API+"/events"),n=await t.json(),a=n.events.find(t=>t.id===e);window.__eventsCache=n.events;const i=document.getElementById("modal"),o=document.getElementById("modal-body");if(o.innerHTML=`<h3>${a.title} – Bookings</h3>`,0===a.bookings.length)o.innerHTML+='<p class="muted">No bookings yet.</p>';else{let tHtml="<table style='width:100%; border-collapse: collapse;'>";tHtml+="<tr style='background:#111'><th style='border:1px solid #333; padding:8px; text-align:left'>Seat</th><th style='border:1px solid #333; padding:8px; text-align:left'>Name</th><th style='border:1px solid #333; padding:8px; text-align:left'>Reg</th><th style='border:1px solid #333; padding:8px; text-align:left'>Role</th><th style='border:1px solid #333; padding:8px; text-align:left'>Action</th></tr>";a.bookings.forEach(r=>{tHtml+=`<tr><td style='border:1px solid #333; padding:8px'>${r.seat}</td><td style='border:1px solid #333; padding:8px'>${r.name}</td><td style='border:1px solid #333; padding:8px'>${r.regNumber}</td><td style='border:1px solid #333; padding:8px'>${r.role}</td><td style='border:1px solid #333; padding:8px'><button class='btn' style='padding:6px 10px; width:auto; color: var(--red-accent); border-color: var(--red-accent);' onclick="organizerCancelBooking(${a.id}, '${r.regNumber}')">Cancel</button></td></tr>`}),tHtml+="</table>",o.innerHTML+=tHtml,o.innerHTML+=`<div style="margin-top:16px; text-align:center;"><button class="btn primary" onclick="downloadBookingsReport(${a.id}, '${a.title.replace(/'/g, "&#39;")}', '${a.date}')">📊 Download Report</button></div>`}i.style.display="flex"}
+async function showEventBookings(e){const t=await fetch(API+"/events"),n=await t.json(),a=n.events.find(t=>t.id===e);window.__eventsCache=n.events;const i=document.getElementById("modal"),o=document.getElementById("modal-body");if(!a){return}o.innerHTML=`<h3>${a.title} – Bookings</h3>`;if(0===a.bookings.length)o.innerHTML+='<p class="muted">No bookings yet.</p>';else{let tHtml="<table style='width:100%; border-collapse: collapse;'>";tHtml+="<tr style='background:#111'><th style='border:1px solid #333; padding:8px; text-align:left'>Seat</th><th style='border:1px solid #333; padding:8px; text-align:left'>Name</th><th style='border:1px solid #333; padding:8px; text-align:left'>Reg</th><th style='border:1px solid #333; padding:8px; text-align:left'>Role</th><th style='border:1px solid #333; padding:8px; text-align:left'>Action</th></tr>";a.bookings.forEach(r=>{tHtml+=`<tr><td style='border:1px solid #333; padding:8px'>${r.seat}</td><td style='border:1px solid #333; padding:8px'>${r.name}</td><td style='border:1px solid #333; padding:8px'>${r.regNumber}</td><td style='border:1px solid #333; padding:8px'>${r.role}</td><td style='border:1px solid #333; padding:8px'><button class='btn' style='padding:6px 10px; width:auto; color: var(--red-accent); border-color: var(--red-accent);' onclick="organizerCancelBooking(${a.id}, '${r.regNumber}')">Cancel</button></td></tr>`}),tHtml+="</table>",o.innerHTML+=tHtml,o.innerHTML+=`<div style="margin-top:16px; text-align:center;"><button class="btn primary" onclick="downloadBookingsReport(${a.id}, '${a.title.replace(/'/g, "&#39;")}', '${a.date}')">📊 Download Report</button></div>`}i.style.display="flex"; try{ if(__modalIntervals[`bookings-${e}`]) clearInterval(__modalIntervals[`bookings-${e}`]); __modalIntervals[`bookings-${e}`] = setInterval(()=>{ try{ showEventBookings(e); }catch{} }, 5000); }catch{} }
 async function organizerCancelBooking(eventId,targetReg){if(!currentUser||currentUser.role!=="ORGANIZER")return; if(!confirm("Cancel this user's ticket?"))return;try{const e=await fetch(API+"/tickets/admin-cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId,targetRegNumber:targetReg,organizerRegNumber:currentUser.regNumber})}),t=await e.json();e.ok&&t.ok?(alert("Ticket cancelled. User will be notified."),showEventBookings(eventId),renderEvents()):alert("Error: "+(t.error||"Failed to cancel booking"))}catch(e){alert("Network error")}}
 async function downloadBookingsReport(eventId, eventTitle, eventDate){
     try{
@@ -2859,7 +2900,7 @@ async function renderAdminEvents(){
         <button class="sub-nav-btn ${__adminEventsFilter==='past'?'active':''}" onclick="__adminEventsFilter='past'; renderAdminEvents()">Past</button>
       </div>
       ${list.map(e=>`<div class="card" style="display:flex;justify-content:space-between;align-items:center;">
-        <div><b>${capitalizeWords(e.title)}</b> • ${e.date} ${e.time} • ${capitalizeWords(e.venue)}</div>
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%"><b>${capitalizeWords(e.title)}</b> • ${e.date} ${e.time} • ${capitalizeWords(e.venue)}</div>
         <div style="display:flex;gap:8px;"><button class="btn" onclick="adminOpenEvent(${e.id})">View</button><button class="btn" onclick="adminOpenEventBookings(${e.id}, '${e.creatorRegNumber}')">Bookings</button><button class="btn" onclick="adminOpenVolunteers(${e.id}, '${e.title.replace(/'/g,"&#39;")}', '${e.creatorRegNumber}')">Volunteers</button><button class="btn" onclick="adminOpenWaitlist(${e.id}, '${e.creatorRegNumber}', '${e.title.replace(/'/g,"&#39;")}')">Waitlist</button><button class="btn" onclick="adminDeleteEventPrompt(${e.id}, '${e.title.replace(/'/g,"\'")}')">Delete</button></div>
       </div>`).join('')||'<p class="muted">No events.</p>'}`;
 }

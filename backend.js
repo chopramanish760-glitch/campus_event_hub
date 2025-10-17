@@ -25,6 +25,7 @@ app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 const DATA_FILE = path.join(__dirname, "data.json");
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const BACKUP_DIR = path.join(__dirname, "backups");
 // Default admin can be overridden via env for cloud deployments
 const DEFAULT_ADMIN = {
   username: process.env.ADMIN_USER || "Chopraa03",
@@ -53,15 +54,77 @@ function ensureDataFile() {
 }
 ensureDataFile();
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
 
 function loadData() {
-  if (!fs.existsSync(DATA_FILE)) return { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+  const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+  if (!fs.existsSync(DATA_FILE)) return base;
   try {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
     return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
-  } catch { return { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN }; }
+  } catch {
+    // Attempt restore from latest backup
+    try {
+      const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+      for (const f of backups) {
+        try {
+          const parsed = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf-8'));
+          return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
+        } catch {}
+      }
+    } catch {}
+    return base;
+  }
 }
-function saveData(data) { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); }
+function saveData(data) {
+  try {
+    // Create rotating backup before writing
+    if (fs.existsSync(DATA_FILE)) {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const backupName = `data-${stamp}.json`;
+      fs.copyFileSync(DATA_FILE, path.join(BACKUP_DIR, backupName));
+      // rotate to last 10 backups
+      try {
+        const list = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort();
+        const toDelete = list.length - 10;
+        if (toDelete > 0) {
+          for (let i = 0; i < toDelete; i++) {
+            try { fs.unlinkSync(path.join(BACKUP_DIR, list[i])); } catch {}
+          }
+        }
+      } catch {}
+    }
+    // Atomic write via temp file then rename
+    const tmp = DATA_FILE + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, DATA_FILE);
+  } catch {
+    // Fallback best-effort
+    try { fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); } catch {}
+  }
+}
+
+// --------- Server-Sent Events (SSE) for live updates ---------
+const sseClients = new Set();
+app.get('/api/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders && res.flushHeaders();
+  const reg = String((req.query.reg || '')).trim();
+  const client = { res, reg };
+  sseClients.add(client);
+  res.write(`event: hello\n` + `data: {"ok":true}\n\n`);
+  const ping = setInterval(() => { try { res.write(`event: ping\n` + `data: {"t":${Date.now()}}\n\n`); } catch {} }, 25000);
+  req.on('close', () => { clearInterval(ping); sseClients.delete(client); });
+});
+function broadcast(eventName, data, targetReg) {
+  const payload = JSON.stringify(data || {});
+  sseClients.forEach(c => {
+    if (targetReg && c.reg !== targetReg) return;
+    try { c.res.write(`event: ${eventName}\n` + `data: ${payload}\n\n`); } catch {}
+  });
+}
 
 app.post("/api/signup", (req, res) => {
   const data = loadData();
@@ -130,7 +193,12 @@ app.post("/api/reset-password", (req, res) => {
   if (!user) { return res.status(404).json({ ok: false, error: "User not found or role does not match." }); }
   user.password = newPassword; if (!data.notifications) data.notifications = {}; if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: "🔐 Your password has been successfully reset.", time: new Date().toISOString(), read: false });
-  saveData(data); res.json({ ok: true });
+  saveData(data);
+  try {
+    broadcast('events_changed', { reason: 'ticket_cancelled', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'cancelled', eventId: event.id }, regNumber);
+  } catch {}
+  res.json({ ok: true });
 });
 app.get("/api/users/:regNumber", (req, res) => { const data = loadData(); const user = data.users.find(u => u.regNumber === req.params.regNumber); if (!user) { return res.status(404).json({ ok: false, error: "User not found" }); } const { password, ...userProfile } = user; res.json({ ok: true, user: userProfile }); });
 // Admin list endpoints
@@ -264,6 +332,7 @@ app.post("/api/events", (req, res) => {
   });
   // No volunteer notifications at creation time
   saveData(data);
+  try { broadcast('events_changed', { reason: 'created', eventId: newEvent.id }); } catch {}
   res.json({ ok: true, event: newEvent });
 });
 
@@ -341,6 +410,7 @@ app.put("/api/events/:id", (req, res) => {
     data.notifications[booking.regNumber].unshift({ msg: notificationMsg, time: new Date().toISOString(), read: false });
   });
   saveData(data);
+  try { broadcast('events_changed', { reason: 'updated', eventId: event.id }); } catch {}
   res.json({ ok: true, event });
 });
 
@@ -364,6 +434,7 @@ app.delete("/api/events/:id", (req, res) => {
   });
   data.events.splice(eventIndex, 1);
   saveData(data);
+  try { broadcast('events_changed', { reason: 'deleted', eventId: id }); } catch {}
   res.json({ ok: true, message: "Event and associated media deleted successfully" });
 });
 
@@ -441,7 +512,12 @@ app.post("/api/tickets", (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   const notifMsg = booking.via === 'qr' ? `🎟️ You booked a ticket via QR code for ${event.title}` : `🎟️ You booked a ticket for ${event.title}`;
   data.notifications[regNumber].unshift({ msg: notifMsg, time: new Date().toISOString(), read: false });
-  saveData(data); res.json({ ok: true, booking });
+  saveData(data);
+  try {
+    broadcast('events_changed', { reason: 'ticket_booked', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'booked', eventId: event.id }, regNumber);
+  } catch {}
+  res.json({ ok: true, booking });
 });
 app.delete("/api/tickets", (req, res) => {
   const data = loadData(); const { eventId, regNumber } = req.body;
@@ -506,6 +582,10 @@ app.post("/api/tickets/admin-cancel", (req, res) => {
   }
 
   saveData(data);
+  try {
+    broadcast('events_changed', { reason: 'ticket_cancelled_by_organizer', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'cancelled_by_organizer', eventId: event.id }, targetRegNumber);
+  } catch {}
   res.json({ ok: true });
 });
 app.get("/api/tickets/:regNumber", (req, res) => {
@@ -569,6 +649,10 @@ app.post("/api/waitlist", (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `📝 You joined the waitlist for '${event.title}'. We'll auto-book if a seat opens.`, time: new Date().toISOString(), read: false });
   saveData(data);
+  try {
+    broadcast('events_changed', { reason: 'waitlist_joined', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'waitlist_joined', eventId: event.id }, regNumber);
+  } catch {}
   res.json({ ok: true });
 });
 
@@ -588,11 +672,15 @@ app.get('/api/volunteers/:eventId', (req, res) => {
     const firstName = u ? (u.name || '').trim() : (v.name || v.regNumber);
     return { regNumber: v.regNumber, name: firstName, volunteerId: v.volunteerId, role: v.role, status: 'accepted' };
   });
-  const requests = (event.volunteerRequests || []).map(r => {
-    const u = data.users.find(u => u.regNumber === r.regNumber);
-    const firstName = u ? (u.name || '').trim() : r.regNumber;
-    return { regNumber: r.regNumber, name: firstName, role: r.role, status: r.status };
-  });
+  const acceptedSet = new Set(volunteersAccepted.map(v => `${v.regNumber}|${String(v.role||'')}`));
+  const requests = (event.volunteerRequests || [])
+    .filter(r => String(r.status||'pending').toLowerCase() === 'pending')
+    .filter(r => !acceptedSet.has(`${r.regNumber}|${String(r.role||'')}`))
+    .map(r => {
+      const u = data.users.find(u => u.regNumber === r.regNumber);
+      const firstName = u ? (u.name || '').trim() : r.regNumber;
+      return { regNumber: r.regNumber, name: firstName, role: r.role, status: r.status };
+    });
   res.json({ ok: true, volunteers: [...volunteersAccepted, ...requests] });
 });
 
@@ -657,6 +745,7 @@ app.post('/api/volunteers/remove', (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `❌ Your volunteer role for '${event.title}' has been cancelled.`, time: new Date().toISOString(), read: false });
   saveData(data);
+  try { broadcast('events_changed', { reason: 'volunteer_removed', eventId: event.id }); } catch {}
   res.json({ ok: true, removed });
 });
 
@@ -706,6 +795,7 @@ app.post('/api/volunteers/respond', (req, res) => {
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `✅ ${regNumber} accepted volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     saveData(data);
+    try { broadcast('events_changed', { reason: 'volunteer_accepted', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'accepted', volunteer });
   } else if (decision === 'reject') {
     vreq.status = 'rejected';
@@ -715,6 +805,7 @@ app.post('/api/volunteers/respond', (req, res) => {
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `❌ ${regNumber} rejected volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     saveData(data);
+    try { broadcast('events_changed', { reason: 'volunteer_rejected', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'rejected' });
   } else {
     return res.status(400).json({ ok: false, error: 'Invalid decision' });
@@ -770,6 +861,10 @@ app.delete("/api/waitlist", (req, res) => {
   if (idx === -1) return res.status(404).json({ ok: false, error: "Not on waitlist" });
   event.waitlist.splice(idx, 1);
   saveData(data);
+  try {
+    broadcast('events_changed', { reason: 'waitlist_left', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'waitlist_left', eventId: event.id }, regNumber);
+  } catch {}
   res.json({ ok: true });
 });
 
