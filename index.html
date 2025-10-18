@@ -160,6 +160,44 @@ const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
 const GOOGLE_MAPS_API_KEY = "AIzaSyAEze6N-tLo6Da6KU-PLcFBQ4zL3eT0BT0";
 let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null;
+
+// Frontend cache management
+function clearFrontendCache() {
+  frontendCache.events = null;
+  frontendCache.lastEventsUpdate = null;
+  frontendCache.userSessions.clear();
+  console.log("🔄 Frontend cache cleared");
+}
+
+// Listen for cache invalidation from server
+function setupCacheInvalidationListener() {
+  if (__eventSource) {
+    __eventSource.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'cache_invalidated') {
+          console.log("📡 Received cache invalidation from server");
+          clearFrontendCache();
+          // Refresh current view if on events page
+          if (document.getElementById('screen-home').style.display !== 'none') {
+            renderEvents();
+          }
+        }
+      } catch (err) {
+        console.error('Failed to parse SSE message:', err);
+      }
+    });
+  }
+}
+
+// Frontend caching for better performance
+const frontendCache = {
+  events: null,
+  lastEventsUpdate: null,
+  eventsCacheTimeout: 10000, // 10 seconds
+  userSessions: new Map(),
+  sessionTimeout: 300000 // 5 minutes
+};
 let welcomeBannerUntil = 0;
 let lastUpcomingCount = -1;
 let currentHomeView = 'upcoming'; let currentMediaView = 'upcoming';
@@ -355,28 +393,31 @@ async function loadChatThread(eventId, regA, regB){
         const isOrganizer = currentUser && currentUser.role === 'ORGANIZER';
         thread.innerHTML = data.messages.map(m => {
             const mine = m.fromReg === currentUser.regNumber;
+            const canDelete = mine || isOrganizer;
+            const deleteBtn = canDelete ? `<button onclick="deleteChatMessage(${m.id})" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:12px; margin-left:5px;" title="Delete">🗑️</button>` : '';
+            
             if(m.type==='media'){
                 const src = `${API_BASE}${m.url}`;
                 if(m.mediaType==='photo'){
-                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
+                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0; position:relative;">
                         <img src="${src}" style="max-width:70%; border-radius:8px; cursor:pointer;" onclick="showLightbox('${m.url}','photo')">
-                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
+                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()} ${deleteBtn}</div>
                     </div>`;
                 } else {
-                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
+                    return `<div style="text-align:${mine?'right':'left'}; margin:6px 0; position:relative;">
                         <video src="${src}" controls preload="metadata" style="max-width:70%; border-radius:8px; max-height: 200px;" onclick="showLightbox('${m.url}','video')">
                             <source src="${src}" type="video/mp4">
                             <source src="${src}" type="video/webm">
                             <source src="${src}" type="video/ogg">
                             Your browser does not support the video tag.
                         </video>
-                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
+                        <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()} ${deleteBtn}</div>
                     </div>`;
                 }
             }
             return `<div style="text-align:${mine?'right':'left'}; margin:6px 0;">
                 <span style="display:inline-block; padding:8px 10px; border-radius:10px; background:${mine?'#2563eb':'#374151'}; color:white; max-width:80%; word-break:break-word;">${m.text}</span>
-                <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()}</div>
+                <div class="muted" style="font-size:0.75rem;">${new Date(m.time).toLocaleTimeString()} ${deleteBtn}</div>
             </div>`;
         }).join('');
         thread.scrollTop = thread.scrollHeight;
@@ -406,6 +447,36 @@ async function sendChatMessage(eventId, organizerReg){
             msgBar.textContent = '❌ ' + (data.error || 'Failed to send');
         }
     }catch(err){ msgBar.textContent = '❌ Network error'; }
+}
+
+async function deleteChatMessage(messageId){
+    if(!confirm('Are you sure you want to delete this message permanently? This action cannot be undone.')){
+        return;
+    }
+    
+    try{
+        const res = await fetch(`${API}/messages/${messageId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ regNumber: currentUser.regNumber })
+        });
+        const data = await res.json();
+        
+        if(res.ok && data.ok){
+            // Refresh the chat thread
+            const eventId = document.querySelector('.chat-container h3')?.textContent?.match(/Chat – (.+)/)?.[1];
+            if(eventId){
+                const organizerReg = document.querySelector('.chat-container')?.getAttribute('data-organizer');
+                if(organizerReg){
+                    loadChatThread(eventId, currentUser.regNumber, organizerReg);
+                }
+            }
+        } else {
+            alert('Failed to delete message: ' + (data.error || 'Unknown error'));
+        }
+    } catch(err){
+        alert('Network error while deleting message');
+    }
 }
 
 async function sendChatMedia(eventId, organizerReg){
@@ -485,8 +556,23 @@ function clearEventSearch() {
 
 async function renderEvents() {
     if (countdownInterval) clearInterval(countdownInterval);
-    const res = await fetch(API + "/events"); const data = await res.json();
-    window.__eventsCache = (data && data.events) || [];
+    
+    // Check cache first
+    const now = Date.now();
+    if (frontendCache.events && frontendCache.lastEventsUpdate && 
+        (now - frontendCache.lastEventsUpdate) < frontendCache.eventsCacheTimeout) {
+        console.log("📊 Using cached events");
+        window.__eventsCache = frontendCache.events;
+    } else {
+        const res = await fetch(API + "/events"); 
+        const data = await res.json();
+        window.__eventsCache = (data && data.events) || [];
+        
+        // Update cache
+        frontendCache.events = window.__eventsCache;
+        frontendCache.lastEventsUpdate = now;
+    }
+    
     const c = document.getElementById("screen-home");
     c.innerHTML = `
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
@@ -1017,6 +1103,10 @@ function startLiveUpdates(){
     __eventSource = es;
     es.addEventListener('hello', ()=>{});
     es.addEventListener('ping', ()=>{});
+    
+    // Set up cache invalidation listener
+    setupCacheInvalidationListener();
+    
     // Events or tickets changed -> refresh lightweight
     const refresh = async () => {
         try{
@@ -1098,7 +1188,7 @@ async function doResetPassword() { const e = document.getElementById("resetReg")
 function togglePasswordVisibility(e) { const t = document.getElementById(e), n = t.nextElementSibling, a = n.querySelectorAll(".eye-open-path"), i = n.querySelectorAll(".eye-closed-path"); "password" === t.type ? (t.type = "text", a.forEach(e => e.style.display = "none"), i.forEach(e => e.style.display = "block")) : (t.type = "password", a.forEach(e => e.style.display = "block"), i.forEach(e => e.style.display = "none")) }
 
 // ---------- Tickets ----------
-async function bookTicket(e){const t=await fetch(API+"/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("🎟️ Ticket booked!"),await renderTickets(!0),renderEvents()):alert("❌ "+(n.error||"Booking failed"))}
+async function bookTicket(e){const t=await fetch(API+"/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("🎟️ Ticket booked!"),clearFrontendCache(),await renderTickets(!0),renderEvents()):alert("❌ "+(n.error||"Booking failed"))}
 async function bookTicketViaQr(eventId){
     const res = await fetch(API+"/tickets",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId: eventId, regNumber: currentUser.regNumber, via: 'qr'})});
     const data = await res.json();
@@ -1181,7 +1271,7 @@ async function cancelWait(eventId){
     if(res.ok && data.ok){ alert('Removed from waitlist.'); await renderTickets(true); renderTickets(); renderEvents(); setTimeout(renderEvents, 500); }
     else { alert('Error: '+(data.error||'Failed to leave waitlist.')); }
 }
-async function cancelTicket(e,t){if(confirm(`Are you sure you want to cancel your ticket for "${t}"?`)){const t=await fetch(API+"/tickets",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("Ticket cancelled successfully."),await renderTickets(!0),renderTickets(),renderEvents()):alert("Error: "+(n.error||"Failed to cancel ticket."))}}
+async function cancelTicket(e,t){if(confirm(`Are you sure you want to cancel your ticket for "${t}"?`)){const t=await fetch(API+"/tickets",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("Ticket cancelled successfully."),clearFrontendCache(),await renderTickets(!0),renderTickets(),renderEvents()):alert("Error: "+(n.error||"Failed to cancel ticket."))}}
 
 // ---------- Organizer Functions ----------
 function createEventScreen() {
@@ -1340,6 +1430,7 @@ async function doCreateEvent() {
         closeModal();
         if (t.ok) {
             alert("✅ Event created!");
+            clearFrontendCache(); // Clear cache for immediate refresh
             renderOrganizer();
             renderEvents();
         } else {
@@ -1838,11 +1929,11 @@ async function sendOrganizerMedia(eventId, studentReg){
         else { msgBar.textContent = '❌ ' + (data.error || 'Failed to send media'); }
     }catch(err){ msgBar.textContent = '❌ Network error'; }
 }
-async function deleteEvent(e,t){if(confirm(`Are you sure you want to permanently delete the event "${t}"? This will notify all booked users and delete all associated media.`)){const t=await fetch(API+"/events/"+e,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(t.ok)alert("Event deleted."),renderOrganizer(),renderEvents();else{const e=await t.json();alert("Error: "+e.error)}}}
+async function deleteEvent(e,t){if(confirm(`Are you sure you want to permanently delete the event "${t}"? This will notify all booked users and delete all associated media.`)){const t=await fetch(API+"/events/"+e,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(t.ok)alert("Event deleted."),clearFrontendCache(),renderOrganizer(),renderEvents();else{const e=await t.json();alert("Error: "+e.error)}}}
 async function showEventMediaModal(e){const t=document.getElementById("modal-body"),n=await fetch(API+"/events"),a=await n.json(),i=a.events.find(t=>t.id===e.id);let o='<div class="media-grid">';i.media&&i.media.length>0?i.media.forEach(t=>{o+='<div class="media-item">',"photo"===t.type&&(o+=`<img src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'photo')">`),"video"===t.type&&(o+=`<video src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'video')"></video>`),o+=`<span class="delete-media-btn" onclick="deleteMedia(${t.id}, ${e.id})">✖</span></div>`}):o+='<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>',o+="</div>",t.innerHTML=`<h3>Media for ${e.title}</h3>${o}<div style="display:flex; gap:10px;"><button class="btn primary" onclick="triggerMediaUpload(${e.id})">Upload Image/Video</button><input type="file" id="eventMediaFile" accept="image/*,video/*" style="display:none"></div>`,document.getElementById("modal").style.display="flex"}
 async function deleteMedia(e,t){if(confirm("Are you sure you want to delete this media file? This action cannot be undone.")){const n=await fetch(`${API}/media/${e}`,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(n.ok){const e=await fetch(API+"/events"),n=await e.json(),a=n.events.find(e=>e.id===t);showEventMediaModal(a)}else{const e=await n.json();alert("Error: "+(e.error||"Failed to delete media."))}}}
 function triggerMediaUpload(e){const t=document.getElementById('eventMediaFile')||(()=>{const f=document.createElement('input');f.type='file';f.accept='image/*,video/*';f.style.display='none';f.id='eventMediaFile';document.body.appendChild(f);return f;})();t.onchange=()=>{t.files&&t.files[0]&&uploadMediaForEvent(e,t.files[0])};t.click()}
-async function uploadMediaForEvent(eventId,file){try{const fd=new FormData();fd.append('file',file);fd.append('eventId',String(eventId));fd.append('regNumber',currentUser.regNumber);const res=await fetch(API+'/media',{method:'POST',body:fd});const data=await res.json();if(res.ok&&data.ok){const evRes=await fetch(API+"/events");const evData=await evRes.json();const ev=evData.events.find(e=>e.id===eventId);showEventMediaModal(ev)}else{alert('❌ '+(data.error||'Upload failed'))}}catch(err){alert('❌ Network error')}}
+async function uploadMediaForEvent(eventId,file){try{const fd=new FormData();fd.append('file',file);fd.append('eventId',String(eventId));fd.append('regNumber',currentUser.regNumber);const res=await fetch(API+'/media',{method:'POST',body:fd});const data=await res.json();if(res.ok&&data.ok){clearFrontendCache();const evRes=await fetch(API+"/events");const evData=await evRes.json();const ev=evData.events.find(e=>e.id===eventId);showEventMediaModal(ev)}else{alert('❌ '+(data.error||'Upload failed'))}}catch(err){alert('❌ Network error')}}
 
 // ---------- Notifications & Misc Helpers ----------
 async function checkEventStates(){if(!currentUser)return;const res=await fetch(API+"/events");const data=await res.json();if(!data.ok)return;const now=new Date;const upcomingCount=data.events.filter(e=>{const endTime=new Date(parseEventDateTime(e.date,e.time).getTime()+(e.duration||0)*6e4);return endTime>=now}).length;if(-1===lastUpcomingCount)lastUpcomingCount=upcomingCount;else if(upcomingCount<lastUpcomingCount){lastUpcomingCount=upcomingCount;const currentScreen=document.querySelector('.content[style*="block"]').id.replace("screen-","");"home"===currentScreen&&renderEvents(),"media"===currentScreen&&renderMedia()}}

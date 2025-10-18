@@ -4,9 +4,11 @@ const multer = require("multer");
 const path = require("path");
 const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
+const compression = require("compression");
 
 const app = express();
-app.use(express.json());
+app.use(compression()); // Enable gzip compression
+app.use(express.json({ limit: '10mb' })); // Increase JSON limit for large uploads
 app.use(cors());
 
 // Root status endpoint for platform health and manual checks
@@ -50,6 +52,15 @@ let db = null;
 let collection = null;
 let gridFSBucket = null;
 
+// In-memory cache for better performance
+const cache = {
+  data: null,
+  lastUpdated: null,
+  cacheTimeout: 30000, // 30 seconds cache
+  userSessions: new Map(), // Cache user sessions
+  eventCache: new Map() // Cache events
+};
+
 // Initialize MongoDB connection
 async function initMongoDB() {
   if (!MONGODB_URI) {
@@ -61,8 +72,18 @@ async function initMongoDB() {
     console.log("🔗 Connecting to MongoDB Atlas...");
     console.log(`📋 MongoDB URI: ${MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials in logs
     
-    // Use minimal configuration for better compatibility
-    client = new MongoClient(MONGODB_URI);
+    // Use optimized configuration for better performance
+    client = new MongoClient(MONGODB_URI, {
+      maxPoolSize: 10, // Maintain up to 10 socket connections
+      serverSelectionTimeoutMS: 5000, // Keep trying to send operations for 5 seconds
+      socketTimeoutMS: 45000, // Close sockets after 45 seconds of inactivity
+      bufferMaxEntries: 0, // Disable mongoose buffering
+      bufferCommands: false, // Disable mongoose buffering
+      maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+      connectTimeoutMS: 10000, // Give up initial connection after 10 seconds
+      heartbeatFrequencyMS: 10000, // Send a ping every 10 seconds
+      minPoolSize: 2 // Maintain a minimum of 2 socket connections
+    });
     
     console.log("🔍 Attempting to connect...");
     await client.connect();
@@ -259,7 +280,27 @@ async function updateUserLastSeen(regNumber) {
   }
 }
 
-// Load data from MongoDB (permanent storage)
+// Cache invalidation function
+function invalidateCache() {
+  cache.data = null;
+  cache.lastUpdated = null;
+  cache.userSessions.clear();
+  console.log("🔄 Cache invalidated - fresh data will be loaded");
+}
+
+// Broadcast cache invalidation to all SSE clients
+function broadcastCacheInvalidation() {
+  const message = `data: ${JSON.stringify({ type: 'cache_invalidated', timestamp: Date.now() })}\n\n`;
+  sseClients.forEach(client => {
+    try {
+      client.write(message);
+    } catch (err) {
+      console.error('Failed to send cache invalidation to client:', err);
+    }
+  });
+}
+
+// Load data from MongoDB (permanent storage) with caching
 async function loadData() {
         const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   
@@ -268,11 +309,17 @@ async function loadData() {
     return base;
   }
   
+  // Check cache first
+  const now = Date.now();
+  if (cache.data && cache.lastUpdated && (now - cache.lastUpdated) < cache.cacheTimeout) {
+    console.log("📊 Using cached data");
+    return cache.data;
+  }
+  
   try {
     const result = await collection.findOne({ type: "app_data" });
     if (result && result.data) {
-      console.log(`📊 Loaded from MongoDB: ${result.data.users?.length || 0} users, ${result.data.events?.length || 0} events, ${result.data.media?.length || 0} media`);
-      return {
+      const data = {
         users: result.data.users || [],
         events: result.data.events || [],
         media: result.data.media || [],
@@ -280,6 +327,13 @@ async function loadData() {
         messages: result.data.messages || [],
         admin: result.data.admin || DEFAULT_ADMIN
       };
+      
+      // Update cache
+      cache.data = data;
+      cache.lastUpdated = now;
+      
+      console.log(`📊 Loaded from MongoDB: ${data.users?.length || 0} users, ${data.events?.length || 0} events, ${data.media?.length || 0} media`);
+      return data;
     }
   } catch (err) {
     console.error("❌ Failed to load from MongoDB:", err);
@@ -330,6 +384,13 @@ async function saveData(data) {
     
     console.log(`✅ Data saved to MongoDB: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
     console.log(`🔍 MongoDB result: matched=${result.matchedCount}, modified=${result.modifiedCount}, upserted=${result.upsertedCount}`);
+    
+    // Update cache with new data
+    cache.data = validatedData;
+    cache.lastUpdated = Date.now();
+    
+    // Broadcast cache invalidation to all connected clients
+    broadcastCacheInvalidation();
     
   } catch (err) {
     console.error('❌ Failed to save data to MongoDB:', err);
@@ -397,17 +458,30 @@ app.post("/api/signup", async (req, res) => {
 });
 app.post("/api/login", async (req, res) => {
   try {
+    const regNumber = String((req.body.regNumber||'')).trim();
+    const password = String((req.body.password||''));
+    
+    // Check user session cache first
+    const cacheKey = `${regNumber}:${password}`;
+    if (cache.userSessions.has(cacheKey)) {
+      const cachedUser = cache.userSessions.get(cacheKey);
+      console.log("📊 Using cached user session");
+      return res.json({ ok: true, user: cachedUser });
+    }
+    
     const data = await loadData();
-  const regNumber = String((req.body.regNumber||'')).trim();
-  const password = String((req.body.password||''));
-  const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
-  if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
+    if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
     
     // Update last seen on login
     user.lastSeen = new Date().toISOString();
     await saveData(data);
     
-  res.json({ ok: true, user });
+    // Cache user session for 5 minutes
+    cache.userSessions.set(cacheKey, user);
+    setTimeout(() => cache.userSessions.delete(cacheKey), 300000); // 5 minutes
+    
+    res.json({ ok: true, user });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -1414,47 +1488,53 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
     if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
     
-    // Store file in GridFS
-    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
-      metadata: {
-        eventId: parseInt(eventId),
-        uploadedBy: regNumber,
-        uploadedAt: new Date(),
-        mimeType: req.file.mimetype
-      }
+    // Store file in GridFS with promise-based approach
+    const uploadPromise = new Promise((resolve, reject) => {
+      const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+        metadata: {
+          eventId: parseInt(eventId),
+          uploadedBy: regNumber,
+          uploadedAt: new Date(),
+          mimeType: req.file.mimetype
+        }
+      });
+      
+      uploadStream.on('error', (error) => {
+        console.error('GridFS upload error:', error);
+        reject(error);
+      });
+      
+      uploadStream.on('finish', () => {
+        resolve(uploadStream.id);
+      });
+      
+      uploadStream.end(req.file.buffer);
     });
     
-    uploadStream.end(req.file.buffer);
+    // Wait for upload to complete
+    const fileId = await uploadPromise;
+    const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
     
-    uploadStream.on('error', (error) => {
-      console.error('GridFS upload error:', error);
-      return res.status(500).json({ ok: false, error: "Failed to save file to database" });
-    });
+    const media = { 
+      id: Date.now(),
+      eventId: parseInt(eventId), 
+      name: req.file.originalname, 
+      url: `/api/media/file/${fileId}`, // GridFS endpoint
+      type,
+      size: req.file.size,
+      gridFSId: fileId
+    };
     
-    uploadStream.on('finish', async () => {
-      const fileId = uploadStream.id;
-      const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
-      
-      const media = { 
-        id: Date.now(),
-        eventId: parseInt(eventId), 
-        name: req.file.originalname, 
-        url: `/api/media/file/${fileId}`, // GridFS endpoint
-        type,
-        size: req.file.size,
-        gridFSId: fileId
-      };
-      
-      data.media.push(media); 
-      await saveData(data);
-      
-      // Update organizer's last seen
-      await updateUserLastSeen(regNumber);
-      
-      console.log(`📁 File saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
-      res.json({ ok: true, media });
-    });
+    data.media.push(media); 
+    await saveData(data);
+    
+    // Update organizer's last seen
+    await updateUserLastSeen(regNumber);
+    
+    console.log(`📁 File saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
+    res.json({ ok: true, media });
   } catch (err) {
+    console.error('Media upload error:', err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
@@ -1669,56 +1749,108 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
     }
     
-    // Store file in GridFS
-    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
-      metadata: {
-        eventId: Number(eventId),
-        uploadedBy: fromReg,
-        uploadedAt: new Date(),
-        mimeType: req.file.mimetype,
-        type: 'chat'
-      }
+    // Store file in GridFS with promise-based approach
+    const uploadPromise = new Promise((resolve, reject) => {
+      const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+        metadata: {
+          eventId: Number(eventId),
+          uploadedBy: fromReg,
+          uploadedAt: new Date(),
+          mimeType: req.file.mimetype,
+          type: 'chat'
+        }
+      });
+      
+      uploadStream.on('error', (error) => {
+        console.error('GridFS chat upload error:', error);
+        reject(error);
+      });
+      
+      uploadStream.on('finish', () => {
+        resolve(uploadStream.id);
+      });
+      
+      uploadStream.end(req.file.buffer);
     });
     
-    uploadStream.end(req.file.buffer);
+    // Wait for upload to complete
+    const fileId = await uploadPromise;
+    const mediaType = req.file.mimetype.startsWith('image/') ? 'photo' : 'video';
+    const msg = { 
+      id: Date.now(), 
+      eventId: Number(eventId), 
+      fromReg, 
+      toReg, 
+      time: new Date().toISOString(), 
+      read: false, 
+      type: 'media', 
+      mediaType, 
+      url: `/api/media/file/${fileId}`,
+      gridFSId: fileId
+    };
     
-    uploadStream.on('error', (error) => {
-      console.error('GridFS chat upload error:', error);
-      return res.status(500).json({ ok: false, error: "Failed to save file to database" });
-    });
+    if (!data.messages) data.messages = [];
+    data.messages.push(msg);
     
-    uploadStream.on('finish', async () => {
-      const fileId = uploadStream.id;
-      const mediaType = req.file.mimetype.startsWith('image/') ? 'photo' : 'video';
-      const msg = { 
-        id: Date.now(), 
-        eventId: Number(eventId), 
-        fromReg, 
-        toReg, 
-        time: new Date().toISOString(), 
-        read: false, 
-        type: 'media', 
-        mediaType, 
-        url: `/api/media/file/${fileId}`,
-        gridFSId: fileId
-      };
-      
-      if (!data.messages) data.messages = [];
-      data.messages.push(msg);
-      
-      if (!data.notifications) data.notifications = {};
-      if (!data.notifications[toReg]) data.notifications[toReg] = [];
-      if (!data.notifications[fromReg]) data.notifications[fromReg] = [];
-      const notifMeta = { type: 'chat', eventId: Number(eventId), fromReg, toReg };
-      data.notifications[toReg].unshift({ msg: `📎 New ${mediaType} in '${event.title}' chat`, time: new Date().toISOString(), read: false, ...notifMeta });
-      data.notifications[fromReg].unshift({ msg: `✅ ${mediaType === 'photo' ? 'Image' : 'Video'} sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
-      
-      await saveData(data);
-      console.log(`📁 Chat file saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
-      res.json({ ok: true, message: msg });
-    });
+    if (!data.notifications) data.notifications = {};
+    if (!data.notifications[toReg]) data.notifications[toReg] = [];
+    if (!data.notifications[fromReg]) data.notifications[fromReg] = [];
+    const notifMeta = { type: 'chat', eventId: Number(eventId), fromReg, toReg };
+    data.notifications[toReg].unshift({ msg: `📎 New ${mediaType} in '${event.title}' chat`, time: new Date().toISOString(), read: false, ...notifMeta });
+    data.notifications[fromReg].unshift({ msg: `✅ ${mediaType === 'photo' ? 'Image' : 'Video'} sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
+    
+    await saveData(data);
+    console.log(`📁 Chat file saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
+    res.json({ ok: true, message: msg });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'Failed to save file.' });
+  }
+});
+
+// Delete chat message with permanent storage cleanup
+app.delete('/api/messages/:messageId', async (req, res) => {
+  try {
+    const data = await loadData();
+    const messageId = parseInt(req.params.messageId);
+    const { regNumber } = req.body;
+    
+    const messageIndex = data.messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) {
+      return res.status(404).json({ ok: false, error: 'Message not found' });
+    }
+    
+    const message = data.messages[messageIndex];
+    
+    // Check if user can delete this message (sender or organizer)
+    const event = data.events.find(e => e.id === message.eventId);
+    if (!event) {
+      return res.status(404).json({ ok: false, error: 'Event not found' });
+    }
+    
+    const canDelete = message.fromReg === regNumber || event.creatorRegNumber === regNumber;
+    if (!canDelete) {
+      return res.status(403).json({ ok: false, error: 'Not authorized to delete this message' });
+    }
+    
+    // Delete from GridFS if it's a media message
+    if (message.type === 'media' && message.gridFSId) {
+      try {
+        await gridFSBucket.delete(message.gridFSId);
+        console.log(`📁 Chat media deleted from GridFS: ${message.gridFSId}`);
+      } catch (err) {
+        console.error('Failed to delete chat media from GridFS:', err);
+      }
+    }
+    
+    // Remove message from database
+    data.messages.splice(messageIndex, 1);
+    await saveData(data);
+    
+    console.log(`🗑️ Chat message deleted: ${messageId}`);
+    res.json({ ok: true, message: 'Message deleted permanently' });
+  } catch (err) {
+    console.error('Chat deletion error:', err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
