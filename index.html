@@ -375,7 +375,7 @@ async function loadChatThread(eventId, regA, regB){
                     </div>`;
                 } else {
                     return `<div style="text-align:${mine?'right':'left'}; margin:6px 0; position:relative;">
-                        <video src="${src}" controls preload="metadata" style="max-width:70%; border-radius:8px; max-height: 200px;" onclick="showLightbox('${m.url}','video')">
+                        <video src="${src}" controls preload="metadata" playsinline webkit-playsinline style="max-width:70%; border-radius:8px; max-height: 200px;" onclick="showLightbox('${m.url}','video')">
                             <source src="${src}" type="video/mp4">
                             <source src="${src}" type="video/webm">
                             <source src="${src}" type="video/ogg">
@@ -463,7 +463,7 @@ async function sendChatMedia(eventId, organizerReg){
     } else if(file.type.startsWith('video/')){
         const url = URL.createObjectURL(file);
         thread.innerHTML += `<div style="text-align:right; margin:6px 0;">
-            <video src="${url}" controls preload="metadata" style="max-width:70%; border-radius:8px; max-height: 200px;">
+            <video src="${url}" controls preload="metadata" playsinline webkit-playsinline style="max-width:70%; border-radius:8px; max-height: 200px;">
                 <source src="${url}" type="video/mp4">
                 <source src="${url}" type="video/webm">
                 <source src="${url}" type="video/ogg">
@@ -727,7 +727,7 @@ async function renderMedia() {
             sectionHtml += `<div class="event-media-section"><h4>${event.title} - ${event.date}</h4><div class="media-grid">`;
             event.media.forEach(m => {
                 if (m.type === "photo") sectionHtml += `<div class=\"media-item\"><img src=\"${API_BASE}${m.url}\" onclick=\"showLightbox('${m.url}', 'photo')\"></div>`;
-                if (m.type === "video") sectionHtml += `<div class=\"media-item\" onclick=\"showLightbox('${m.url}', 'video')\"><video src=\"${API_BASE}${m.url}\" preload=\"metadata\"></video><div class=\"play-overlay\"><div class=\"play-icon\">▶</div></div></div>`;
+                if (m.type === "video") sectionHtml += `<div class=\"media-item\" onclick=\"showLightbox('${m.url}', 'video')\"><video src=\"${API_BASE}${m.url}\" preload=\"metadata\" playsinline webkit-playsinline></video><div class=\"play-overlay\"><div class=\"play-icon\">▶</div></div></div>`;
             });
             sectionHtml += `</div></div>`;
         });
@@ -1968,7 +1968,7 @@ async function sendOrganizerMedia(eventId, studentReg){
     }catch(err){ msgBar.textContent = '❌ Network error'; }
 }
 async function deleteEvent(e,t){if(confirm(`Are you sure you want to permanently delete the event "${t}"? This will notify all booked users and delete all associated media.`)){const t=await fetch(API+"/events/"+e,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(t.ok)alert("Event deleted."),renderOrganizer(),renderEvents();else{const e=await t.json();alert("Error: "+e.error)}}}
-async function showEventMediaModal(e){const t=document.getElementById("modal-body"),n=await fetch(API+"/events"),a=await n.json(),i=a.events.find(t=>t.id===e.id);let o='<div class="media-grid">';i.media&&i.media.length>0?i.media.forEach(t=>{o+='<div class="media-item">',"photo"===t.type&&(o+=`<img src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'photo')">`),"video"===t.type&&(o+=`<video src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'video')"></video>`),o+=`<span class="delete-media-btn" onclick="deleteMedia(${t.id}, ${e.id})">✖</span></div>`}):o+='<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>',o+="</div>",t.innerHTML=`<h3>Media for ${e.title}</h3>${o}<div style="display:flex; gap:10px;"><button class="btn primary" onclick="triggerMediaUpload(${e.id})">Upload Image/Video</button><input type="file" id="eventMediaFile" accept="image/*,video/*" style="display:none"></div>`,document.getElementById("modal").style.display="flex"}
+async function showEventMediaModal(e){const t=document.getElementById("modal-body"),n=await fetch(API+"/events"),a=await n.json(),i=a.events.find(t=>t.id===e.id);let o='<div class="media-grid">';i.media&&i.media.length>0?i.media.forEach(t=>{o+='<div class="media-item">',"photo"===t.type&&(o+=`<img src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'photo')">`),"video"===t.type&&(o+=`<video src="${API_BASE}${t.url}" onclick="showLightbox('${t.url}', 'video')" playsinline webkit-playsinline></video>`),o+=`<span class="delete-media-btn" onclick="deleteMedia(${t.id}, ${e.id})">✖</span></div>`}):o+='<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>',o+="</div>",t.innerHTML=`<h3>Media for ${e.title}</h3>${o}<div style="display:flex; gap:10px;"><button class="btn primary" onclick="triggerMediaUpload(${e.id})">Upload Image/Video</button><input type="file" id="eventMediaFile" accept="image/*,video/*" style="display:none"></div>`,document.getElementById("modal").style.display="flex"}
 async function deleteMedia(e,t){if(confirm("Are you sure you want to delete this media file? This action cannot be undone.")){const n=await fetch(`${API}/media/${e}`,{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})});if(n.ok){const e=await fetch(API+"/events"),n=await e.json(),a=n.events.find(e=>e.id===t);showEventMediaModal(a)}else{const e=await n.json();alert("Error: "+(e.error||"Failed to delete media."))}}}
 function triggerMediaUpload(e){const t=document.getElementById('eventMediaFile')||(()=>{const f=document.createElement('input');f.type='file';f.accept='image/*,video/*';f.style.display='none';f.id='eventMediaFile';document.body.appendChild(f);return f;})();t.onchange=()=>{t.files&&t.files[0]&&uploadMediaForEvent(e,t.files[0])};t.click()}
 async function uploadMediaForEvent(eventId,file){try{const fd=new FormData();fd.append('file',file);fd.append('eventId',String(eventId));fd.append('regNumber',currentUser.regNumber);const res=await fetch(API+'/media',{method:'POST',body:fd});const data=await res.json();if(res.ok&&data.ok){const evRes=await fetch(API+"/events");const evData=await evRes.json();const ev=evData.events.find(e=>e.id===eventId);showEventMediaModal(ev)}else{alert('❌ '+(data.error||'Upload failed'))}}catch(err){alert('❌ Network error')}}
@@ -2480,7 +2480,7 @@ function showLightbox(e,t){
     const isOrganizer = currentUser && currentUser.role === 'ORGANIZER';
     let mediaHtml = '';
     if (t === 'photo') mediaHtml = `<img src="${fullUrl}">`;
-    if (t === 'video') mediaHtml = `<video src="${fullUrl}" controls autoplay preload="metadata" style="max-width: 100%; max-height: 80vh;">
+    if (t === 'video') mediaHtml = `<video src="${fullUrl}" controls autoplay preload="metadata" playsinline webkit-playsinline style="max-width: 100%; max-height: 80vh;">
         <source src="${fullUrl}" type="video/mp4">
         <source src="${fullUrl}" type="video/webm">
         <source src="${fullUrl}" type="video/ogg">

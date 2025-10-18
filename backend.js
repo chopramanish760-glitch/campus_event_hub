@@ -4,6 +4,8 @@ const multer = require("multer");
 const path = require("path");
 const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
+const ffmpeg = require("fluent-ffmpeg");
+const sharp = require("sharp");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -1418,6 +1420,76 @@ const chatUpload = multer({
     cb(new Error('Only image and video files are allowed'));
   }
 });
+// Video compression function
+async function compressVideo(inputBuffer, filename) {
+  return new Promise((resolve, reject) => {
+    const tempInputPath = path.join(__dirname, 'temp', `input_${Date.now()}_${filename}`);
+    const tempOutputPath = path.join(__dirname, 'temp', `output_${Date.now()}_${filename}`);
+    
+    // Ensure temp directory exists
+    const tempDir = path.join(__dirname, 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Write input buffer to temp file
+    fs.writeFileSync(tempInputPath, inputBuffer);
+    
+    ffmpeg(tempInputPath)
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .outputOptions([
+        '-preset fast',
+        '-crf 28', // Higher CRF = more compression, lower quality
+        '-maxrate 1M', // Limit bitrate to 1Mbps
+        '-bufsize 2M',
+        '-movflags +faststart', // Enable fast start for web playback
+        '-profile:v baseline',
+        '-level 3.0'
+      ])
+      .size('1280x720') // Resize to 720p max
+      .on('end', () => {
+        try {
+          const compressedBuffer = fs.readFileSync(tempOutputPath);
+          // Clean up temp files
+          fs.unlinkSync(tempInputPath);
+          fs.unlinkSync(tempOutputPath);
+          resolve(compressedBuffer);
+        } catch (error) {
+          reject(error);
+        }
+      })
+      .on('error', (err) => {
+        // Clean up temp files on error
+        try {
+          if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
+          if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
+        } catch {}
+        reject(err);
+      })
+      .save(tempOutputPath);
+  });
+}
+
+// Image compression function
+async function compressImage(inputBuffer) {
+  try {
+    return await sharp(inputBuffer)
+      .resize(1920, 1080, { 
+        fit: 'inside',
+        withoutEnlargement: true 
+      })
+      .jpeg({ 
+        quality: 85,
+        progressive: true 
+      })
+      .toBuffer();
+  } catch (error) {
+    console.error('Image compression failed:', error);
+    return inputBuffer; // Return original if compression fails
+  }
+}
+
 app.post("/api/media", upload.single("file"), async (req, res) => {
   try {
     const data = await loadData();
@@ -1426,6 +1498,25 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
   const event = data.events.find(e => e.id === parseInt(eventId));
   if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
   if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
+    
+    // Compress media before storing
+    let processedBuffer = req.file.buffer;
+    let originalSize = req.file.buffer.length;
+    
+    try {
+      if (req.file.mimetype.startsWith('video/')) {
+        console.log(`🎬 Compressing video: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await compressVideo(req.file.buffer, req.file.originalname);
+        console.log(`✅ Video compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+      } else if (req.file.mimetype.startsWith('image/')) {
+        console.log(`🖼️ Compressing image: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await compressImage(req.file.buffer);
+        console.log(`✅ Image compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+      }
+    } catch (compressionError) {
+      console.error('⚠️ Compression failed, using original file:', compressionError.message);
+      processedBuffer = req.file.buffer; // Use original if compression fails
+    }
     
     // Store file in GridFS with promise-based approach
     const uploadPromise = new Promise((resolve, reject) => {
@@ -1447,7 +1538,7 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
         resolve(uploadStream.id);
       });
       
-      uploadStream.end(req.file.buffer);
+      uploadStream.end(processedBuffer);
     });
     
     // Wait for upload to complete
@@ -1687,6 +1778,25 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
     return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
   }
     
+    // Compress media before storing
+    let processedBuffer = req.file.buffer;
+    let originalSize = req.file.buffer.length;
+    
+    try {
+      if (req.file.mimetype.startsWith('video/')) {
+        console.log(`🎬 Compressing chat video: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await compressVideo(req.file.buffer, req.file.originalname);
+        console.log(`✅ Chat video compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+      } else if (req.file.mimetype.startsWith('image/')) {
+        console.log(`🖼️ Compressing chat image: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await compressImage(req.file.buffer);
+        console.log(`✅ Chat image compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+      }
+    } catch (compressionError) {
+      console.error('⚠️ Chat compression failed, using original file:', compressionError.message);
+      processedBuffer = req.file.buffer; // Use original if compression fails
+    }
+    
     // Store file in GridFS with promise-based approach
     const uploadPromise = new Promise((resolve, reject) => {
       const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
@@ -1708,7 +1818,7 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
         resolve(uploadStream.id);
       });
       
-      uploadStream.end(req.file.buffer);
+      uploadStream.end(processedBuffer);
     });
     
     // Wait for upload to complete
