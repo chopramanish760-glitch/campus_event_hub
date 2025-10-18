@@ -24,19 +24,85 @@ app.get("/", (req, res) => {
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 // Use persistent storage paths that survive Render.com restarts
+// For Render.com, we need to use a different approach since persistent disk isn't available on free tier
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "data.json");
 const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, "backups");
 
-// For Render.com, use persistent volume if available
-// Render.com provides persistent disk storage at /opt/render/project/
-const PERSISTENT_DATA_FILE = process.env.RENDER ? "/opt/render/project/data.json" : DATA_FILE;
-const PERSISTENT_UPLOAD_DIR = process.env.RENDER ? "/opt/render/project/uploads" : UPLOAD_DIR;
-const PERSISTENT_BACKUP_DIR = process.env.RENDER ? "/opt/render/project/backups" : BACKUP_DIR;
+// For Render.com, use environment-based storage or fallback to local
+// Check if we're on Render.com and if persistent storage is available
+const IS_RENDER = process.env.RENDER === 'true';
+const HAS_PERSISTENT_DISK = process.env.RENDER_PERSISTENT_DISK === 'true';
 
-// Log environment detection
-console.log(`🌍 Environment: ${process.env.RENDER ? 'Render.com (PERSISTENT STORAGE)' : 'Local Development'}`);
-console.log(`💾 Using persistent storage: ${process.env.RENDER ? 'YES' : 'NO'}`);
+// Use persistent paths only if persistent disk is explicitly enabled
+const PERSISTENT_DATA_FILE = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/data.json" : DATA_FILE;
+const PERSISTENT_UPLOAD_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/uploads" : UPLOAD_DIR;
+const PERSISTENT_BACKUP_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/backups" : BACKUP_DIR;
+
+// Simple JSONBin.io storage solution for Render.com
+// This is a free service that provides persistent JSON storage
+const JSONBIN_API_KEY = process.env.JSONBIN_API_KEY || null;
+const JSONBIN_BIN_ID = process.env.JSONBIN_BIN_ID || null;
+
+// Check if JSONBin storage is configured
+const HAS_JSONBIN_STORAGE = JSONBIN_API_KEY && JSONBIN_BIN_ID;
+
+console.log(`📦 JSONBin Storage: ${HAS_JSONBIN_STORAGE ? 'CONFIGURED' : 'NOT CONFIGURED'}`);
+
+// Function to save data to JSONBin
+async function saveToJSONBin(data) {
+  if (!HAS_JSONBIN_STORAGE) return false;
+  
+  try {
+    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_API_KEY
+      },
+      body: JSON.stringify(data)
+    });
+    
+    if (response.ok) {
+      console.log('✅ Data saved to JSONBin');
+      return true;
+    } else {
+      console.error('❌ Failed to save to JSONBin:', response.status);
+      return false;
+    }
+  } catch (err) {
+    console.error('❌ JSONBin storage error:', err);
+    return false;
+  }
+}
+
+// Function to load data from JSONBin
+async function loadFromJSONBin() {
+  if (!HAS_JSONBIN_STORAGE) return null;
+  
+  try {
+    const response = await fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_BIN_ID}/latest`, {
+      headers: {
+        'X-Master-Key': JSONBIN_API_KEY
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('✅ Data loaded from JSONBin');
+      return data.record;
+    } else if (response.status === 404) {
+      console.log('📄 No data found on JSONBin, using default');
+      return null;
+    } else {
+      console.error('❌ Failed to load from JSONBin:', response.status);
+      return null;
+    }
+  } catch (err) {
+    console.error('❌ JSONBin storage error:', err);
+    return null;
+  }
+}
 
 // Data migration function - copy from old location to persistent location
 function migrateToPersistentStorage() {
@@ -178,6 +244,8 @@ function updateUserLastSeen(regNumber) {
 
 function loadData() {
   const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+  
+  // Try to load from local file first
   const dataFile = PERSISTENT_DATA_FILE;
   if (!fs.existsSync(dataFile)) return base;
   try {
@@ -197,7 +265,6 @@ function loadData() {
     return base;
   }
 }
-// Enhanced data persistence with multiple safeguards
 function saveData(data) {
   try {
     const dataFile = PERSISTENT_DATA_FILE;
@@ -291,7 +358,7 @@ function saveData(data) {
     
     // Fallback best-effort
     try { 
-      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));  
+      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2)); 
       console.log('⚠️ Used fallback save method');
     } catch (fallbackErr) {
       console.error('❌ Fallback save also failed:', fallbackErr);
@@ -1179,6 +1246,51 @@ app.get('/api/data/integrity', (req, res) => {
   } catch (err) {
     console.error('Integrity check failed:', err);
     res.status(500).json({ ok: false, error: 'Integrity check failed' });
+  }
+});
+
+// Data backup and restore endpoints for Render.com
+app.get('/api/backup/data', (req, res) => {
+  try {
+    const data = loadData();
+    res.json({
+      ok: true,
+      data: data,
+      timestamp: new Date().toISOString(),
+      message: 'Data backup successful'
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/restore/data', (req, res) => {
+  try {
+    const { data } = req.body;
+    if (!data || typeof data !== 'object') {
+      return res.status(400).json({ ok: false, error: 'Invalid data format' });
+    }
+    
+    // Validate data structure
+    const validatedData = {
+      users: Array.isArray(data.users) ? data.users : [],
+      events: Array.isArray(data.events) ? data.events : [],
+      media: Array.isArray(data.media) ? data.media : [],
+      notifications: data.notifications && typeof data.notifications === 'object' ? data.notifications : {},
+      messages: Array.isArray(data.messages) ? data.messages : [],
+      admin: data.admin || DEFAULT_ADMIN
+    };
+    
+    // Save the restored data
+    saveData(validatedData);
+    
+    res.json({
+      ok: true,
+      message: 'Data restored successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
