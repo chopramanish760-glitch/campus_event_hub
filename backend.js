@@ -120,10 +120,34 @@ function ensureDataFile() {
 // Run migration first (only on Render.com)
 migrateToPersistentStorage();
 
+// Ensure persistent directories exist with proper permissions
+function ensurePersistentDirectories() {
+  try {
+    // Create directories with recursive flag
+    [PERSISTENT_UPLOAD_DIR, PERSISTENT_BACKUP_DIR].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        console.log(`📁 Created persistent directory: ${dir}`);
+      } else {
+        console.log(`📁 Persistent directory exists: ${dir}`);
+        // Verify it's writable
+        try {
+          const testFile = path.join(dir, '.test');
+          fs.writeFileSync(testFile, 'test');
+          fs.unlinkSync(testFile);
+          console.log(`✅ Directory is writable: ${dir}`);
+        } catch (err) {
+          console.error(`❌ Directory not writable: ${dir}`, err);
+        }
+      }
+    });
+  } catch (err) {
+    console.error('Failed to ensure persistent directories:', err);
+  }
+}
+
+ensurePersistentDirectories();
 ensureDataFile();
-// Ensure persistent directories exist
-if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
-if (!fs.existsSync(PERSISTENT_BACKUP_DIR)) fs.mkdirSync(PERSISTENT_BACKUP_DIR, { recursive: true });
 
 // Auto-backup system - saves data every 5 minutes
 setInterval(() => {
@@ -1158,6 +1182,37 @@ app.get('/api/data/integrity', (req, res) => {
   }
 });
 
+// Debug endpoint to check uploads directory
+app.get('/api/debug/uploads', (req, res) => {
+  try {
+    const uploadDir = PERSISTENT_UPLOAD_DIR;
+    const exists = fs.existsSync(uploadDir);
+    const files = exists ? fs.readdirSync(uploadDir) : [];
+    const fileDetails = files.map(file => {
+      const filePath = path.join(uploadDir, file);
+      const stats = fs.statSync(filePath);
+      return {
+        name: file,
+        size: stats.size,
+        modified: stats.mtime.toISOString(),
+        path: filePath
+      };
+    });
+    
+    res.json({
+      ok: true,
+      debug: {
+        uploadDir,
+        exists,
+        fileCount: files.length,
+        files: fileDetails
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // Data persistence verification endpoint
 app.get('/api/data/persistence', (req, res) => {
   try {
@@ -1322,7 +1377,23 @@ app.put("/api/profile", (req, res) => {
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
 });
 
-app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR));
+// Enhanced static file serving with debugging
+console.log(`📁 Setting up static file serving from: ${PERSISTENT_UPLOAD_DIR}`);
+console.log(`📁 Upload directory exists: ${fs.existsSync(PERSISTENT_UPLOAD_DIR)}`);
+if (fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+  const files = fs.readdirSync(PERSISTENT_UPLOAD_DIR);
+  console.log(`📁 Files in upload directory: ${files.length} files`);
+  if (files.length > 0) {
+    console.log(`📁 Sample files: ${files.slice(0, 3).join(', ')}`);
+  }
+}
+
+app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR, {
+  index: false,
+  dotfiles: 'ignore',
+  etag: true,
+  lastModified: true
+}));
 const PORT = process.env.PORT || 5000;
 // Enhanced startup logging with data verification
 console.log('🚀 Campus Event Hub Backend Starting...');
