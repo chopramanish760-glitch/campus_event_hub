@@ -190,6 +190,17 @@ async function initializeApp() {
     console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
   }
   
+  // Static file serving setup
+  console.log(`📁 Setting up static file serving from: ${PERSISTENT_UPLOAD_DIR}`);
+  console.log(`📁 Upload directory exists: ${fs.existsSync(PERSISTENT_UPLOAD_DIR)}`);
+  if (fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+    const files = fs.readdirSync(PERSISTENT_UPLOAD_DIR);
+    console.log(`📁 Files in upload directory: ${files.length} files`);
+    if (files.length > 0) {
+      console.log(`📁 Sample files: ${files.slice(0, 3).join(', ')}`);
+    }
+  }
+  
   // Initialize MongoDB connection
   const mongoConnected = await initMongoDB();
   
@@ -217,6 +228,9 @@ async function initializeApp() {
   
   console.log("=" .repeat(50));
   console.log("🎯 Ready to serve requests!");
+  
+  // Start the server AFTER everything is initialized
+  app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
 }
 
 // Start the application
@@ -1411,16 +1425,7 @@ app.put("/api/profile", (req, res) => {
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
 });
 
-// Enhanced static file serving with debugging
-console.log(`📁 Setting up static file serving from: ${PERSISTENT_UPLOAD_DIR}`);
-console.log(`📁 Upload directory exists: ${fs.existsSync(PERSISTENT_UPLOAD_DIR)}`);
-if (fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
-  const files = fs.readdirSync(PERSISTENT_UPLOAD_DIR);
-  console.log(`📁 Files in upload directory: ${files.length} files`);
-  if (files.length > 0) {
-    console.log(`📁 Sample files: ${files.slice(0, 3).join(', ')}`);
-  }
-}
+// Static file serving setup (logging moved to initializeApp)
 
 app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR, {
   index: false,
@@ -1429,7 +1434,6 @@ app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR, {
   lastModified: true
 }));
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
 
 // ---------- Messages (Chat) ----------
 // Send a message related to an event between a student and the organizer
