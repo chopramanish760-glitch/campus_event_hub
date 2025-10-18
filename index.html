@@ -527,8 +527,6 @@ function clearEventSearch() {
 async function renderEvents() {
     if (countdownInterval) clearInterval(countdownInterval);
     
-    const homeContent = document.getElementById('home-content');
-    
     // Get events data - cache temporarily disabled
     const res = await fetch(API + "/events"); 
     const eventsData = await res.json();
@@ -536,7 +534,8 @@ async function renderEvents() {
     
     if (!eventsData.ok || !eventsData.events || eventsData.events.length === 0) { 
         console.log("❌ No events found:", eventsData);
-        homeContent.innerHTML = `<p class="muted">📌 No events found.</p>`; 
+        const c = document.getElementById("screen-home");
+        c.innerHTML = `<p class="muted">📌 No events found.</p>`; 
         return; 
     }
     
@@ -576,6 +575,7 @@ async function renderEvents() {
         </div>
         <div id="home-content"></div>`;
     
+    const homeContent = document.getElementById('home-content');
     const currentDate = new Date();
     
     // Apply search and date filters
