@@ -564,9 +564,9 @@ async function renderEvents() {
     if (countdownInterval) clearInterval(countdownInterval);
     
     // Check cache first
-    const now = Date.now();
+    const currentTime = Date.now();
     if (frontendCache.events && frontendCache.lastEventsUpdate && 
-        (now - frontendCache.lastEventsUpdate) < frontendCache.eventsCacheTimeout) {
+        (currentTime - frontendCache.lastEventsUpdate) < frontendCache.eventsCacheTimeout) {
         console.log("📊 Using cached events");
         window.__eventsCache = frontendCache.events;
     } else {
@@ -576,7 +576,7 @@ async function renderEvents() {
         
         // Update cache
         frontendCache.events = window.__eventsCache;
-        frontendCache.lastEventsUpdate = now;
+        frontendCache.lastEventsUpdate = currentTime;
     }
     
     const c = document.getElementById("screen-home");
@@ -614,7 +614,7 @@ async function renderEvents() {
         <div id="home-content"></div>`;
     const homeContent = document.getElementById('home-content');
     if (!data.ok || !data.events || data.events.length === 0) { homeContent.innerHTML = `<p class="muted">📌 No events found.</p>`; return; }
-    const now = new Date();
+    const currentDate = new Date();
     
     // Apply search and date filters
     let filteredEvents = data.events.filter(e => {
@@ -642,8 +642,8 @@ async function renderEvents() {
         return true; // 'all'
     });
     
-    const upcomingEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) >= now);
-    const pastEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) < now);
+    const upcomingEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) >= currentDate);
+    const pastEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) < currentDate);
     
     // Apply sorting
     if (currentSortOrder === 'upcoming') {
@@ -746,9 +746,9 @@ async function renderMedia() {
     if (!data.ok) { mediaContent.innerHTML = `<p class="muted">Could not load media.</p>`; return; }
     const eventsWithMedia = data.events.filter(e => e.media && e.media.length > 0);
     if (eventsWithMedia.length === 0) { mediaContent.innerHTML = `<p class="muted">🖼️ No media has been uploaded for any event yet.</p>`; return; }
-    const now = new Date();
-    const upcomingMediaEvents = eventsWithMedia.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) >= now).sort((a,b) => parseEventDateTime(a.date, a.time) - parseEventDateTime(b.date, b.time));
-    const pastMediaEvents = eventsWithMedia.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) < now).sort((a,b) => parseEventDateTime(b.date, b.time) - parseEventDateTime(a.date, a.time));
+    const mediaDate = new Date();
+    const upcomingMediaEvents = eventsWithMedia.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) >= mediaDate).sort((a,b) => parseEventDateTime(a.date, a.time) - parseEventDateTime(b.date, b.time));
+    const pastMediaEvents = eventsWithMedia.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) < mediaDate).sort((a,b) => parseEventDateTime(b.date, b.time) - parseEventDateTime(a.date, a.time));
     const renderMediaSection = (events) => {
         if (events.length === 0) return `<p class="muted">No media in this section.</p>`;
         let sectionHtml = '';
@@ -1270,7 +1270,7 @@ async function renderTickets(e=!1){
     if(0===userTickets.length){ o.innerHTML+=`<p class="muted">🎟️ No ticket booking history yet.</p>`; return; }
     
     // Sort tickets: upcoming booked, upcoming waiting, past booked, past waiting
-    const now = new Date();
+    const ticketDate = new Date();
     const sortedTickets = userTickets.sort((a, b) => {
         const eventA = n.events.find(e => e.id === a.eventId);
         const eventB = n.events.find(e => e.id === b.eventId);
@@ -1279,8 +1279,8 @@ async function renderTickets(e=!1){
         const endTimeA = new Date(parseEventDateTime(eventA.date, eventA.time).getTime() + (eventA.duration || 0) * 60000);
         const endTimeB = new Date(parseEventDateTime(eventB.date, eventB.time).getTime() + (eventB.duration || 0) * 60000);
         
-        const isUpcomingA = endTimeA >= now;
-        const isUpcomingB = endTimeB >= now;
+        const isUpcomingA = endTimeA >= ticketDate;
+        const isUpcomingB = endTimeB >= ticketDate;
         
         // First sort by upcoming vs past
         if (isUpcomingA !== isUpcomingB) {
@@ -1550,15 +1550,15 @@ async function renderOrganizer(){
         return;
     }
     
-    const now = new Date;
+    const organizerDate = new Date;
     const upcomingAndLive = myEvents.filter(e => {
         const endTime = new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000);
-        return endTime >= now;
+        return endTime >= organizerDate;
     }).sort((a, b) => parseEventDateTime(a.date, a.time) - parseEventDateTime(b.date, b.time));
     
     const past = myEvents.filter(e => {
         const endTime = new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000);
-        return endTime < now;
+        return endTime < organizerDate;
     }).sort((a, b) => parseEventDateTime(b.date, b.time) - parseEventDateTime(a.date, a.time));
     
     const renderSection = (title, events, highlight) => {
@@ -1991,7 +1991,7 @@ function triggerMediaUpload(e){const t=document.getElementById('eventMediaFile')
 async function uploadMediaForEvent(eventId,file){try{const fd=new FormData();fd.append('file',file);fd.append('eventId',String(eventId));fd.append('regNumber',currentUser.regNumber);const res=await fetch(API+'/media',{method:'POST',body:fd});const data=await res.json();if(res.ok&&data.ok){clearFrontendCache();const evRes=await fetch(API+"/events");const evData=await evRes.json();const ev=evData.events.find(e=>e.id===eventId);showEventMediaModal(ev)}else{alert('❌ '+(data.error||'Upload failed'))}}catch(err){alert('❌ Network error')}}
 
 // ---------- Notifications & Misc Helpers ----------
-async function checkEventStates(){if(!currentUser)return;const res=await fetch(API+"/events");const data=await res.json();if(!data.ok)return;const now=new Date;const upcomingCount=data.events.filter(e=>{const endTime=new Date(parseEventDateTime(e.date,e.time).getTime()+(e.duration||0)*6e4);return endTime>=now}).length;if(-1===lastUpcomingCount)lastUpcomingCount=upcomingCount;else if(upcomingCount<lastUpcomingCount){lastUpcomingCount=upcomingCount;const currentScreen=document.querySelector('.content[style*="block"]').id.replace("screen-","");"home"===currentScreen&&renderEvents(),"media"===currentScreen&&renderMedia()}}
+async function checkEventStates(){if(!currentUser)return;const res=await fetch(API+"/events");const data=await res.json();if(!data.ok)return;const eventDate=new Date;const upcomingCount=data.events.filter(e=>{const endTime=new Date(parseEventDateTime(e.date,e.time).getTime()+(e.duration||0)*6e4);return endTime>=eventDate}).length;if(-1===lastUpcomingCount)lastUpcomingCount=upcomingCount;else if(upcomingCount<lastUpcomingCount){lastUpcomingCount=upcomingCount;const currentScreen=document.querySelector('.content[style*="block"]').id.replace("screen-","");"home"===currentScreen&&renderEvents(),"media"===currentScreen&&renderMedia()}}
 
 // Event start notifications with time gaps (15, 20, 20, 5 minutes) and live notifications
 async function checkEventStartNotifications() {
@@ -2002,14 +2002,14 @@ async function checkEventStartNotifications() {
         const data = await res.json();
         if (!data.ok) return;
         
-        const now = new Date();
+        const notificationDate = new Date();
         const notificationGaps = [60, 45, 25, 5]; // Minutes before event start (60-45=15, 45-25=20, 25-5=20, 5-0=5)
         
         for (const event of data.events) {
             const eventStart = parseEventDateTime(event.date, event.time);
             const eventEnd = new Date(eventStart.getTime() + (event.duration || 0) * 60 * 1000);
-            const timeUntilStart = eventStart.getTime() - now.getTime();
-            const timeUntilEnd = eventEnd.getTime() - now.getTime();
+            const timeUntilStart = eventStart.getTime() - notificationDate.getTime();
+            const timeUntilEnd = eventEnd.getTime() - notificationDate.getTime();
             const minutesUntilStart = Math.floor(timeUntilStart / (1000 * 60));
             
             // Debug logging
@@ -2135,7 +2135,7 @@ async function handleNotificationClick(notif){
     }
 }
 async function markAllAsRead(){await fetch(API+"/notifications/mark-read",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({regNumber:currentUser.regNumber})}),renderNotifications(),pollNotifications()}
-async function pollNotifications(){if(!currentUser)return;try{try{const u=await fetch(API+"/users/"+currentUser.regNumber);if(u.status===404){alert('Your account has been deleted. Logging out.');logout();return;}}catch(_){}const e=await fetch(API+"/notifications/"+currentUser.regNumber),t=await e.json();const n=document.getElementById("notificationTicker");const tickerTextEl=document.getElementById("notificationTickerText");const now=Date.now();const bannerActive=now<welcomeBannerUntil;if(t.ok&&t.notifications.length>0){const r=t.notifications.filter(e=>!e.read).length;if(r>0&&!bannerActive){tickerTextEl.textContent=`🔔 You have ${r} unread notification(s)! Click to view.`;if(document.getElementById("screen-notifications").style.display!=="block"){n.style.display="block";tickerTextEl.style.animationPlayState='running';}}else if(!bannerActive){n.style.display="none";tickerTextEl.style.animationPlayState='paused';tickerTextEl.style.transform='translateX(0)';}}else if(!bannerActive){n.style.display="none"}}catch(e){}}
+async function pollNotifications(){if(!currentUser)return;try{try{const u=await fetch(API+"/users/"+currentUser.regNumber);if(u.status===404){alert('Your account has been deleted. Logging out.');logout();return;}}catch(_){}const e=await fetch(API+"/notifications/"+currentUser.regNumber),t=await e.json();const n=document.getElementById("notificationTicker");const tickerTextEl=document.getElementById("notificationTickerText");const pollTime=Date.now();const bannerActive=pollTime<welcomeBannerUntil;if(t.ok&&t.notifications.length>0){const r=t.notifications.filter(e=>!e.read).length;if(r>0&&!bannerActive){tickerTextEl.textContent=`🔔 You have ${r} unread notification(s)! Click to view.`;if(document.getElementById("screen-notifications").style.display!=="block"){n.style.display="block";tickerTextEl.style.animationPlayState='running';}}else if(!bannerActive){n.style.display="none";tickerTextEl.style.animationPlayState='paused';tickerTextEl.style.transform='translateX(0)';}}else if(!bannerActive){n.style.display="none"}}catch(e){}}
 function parseEventDateTime(e,t){if(!t)return new Date(e);if(/am|pm/i.test(t)){let[n,a]=t.split(" ");let[i,o]=n.split(":").map(Number);"PM"===a.toUpperCase()&&i<12&&(i+=12),"AM"===a.toUpperCase()&&12===i&&(i=0);return new Date(`${e}T${String(i).padStart(2,"0")}:${o.toString().padStart(2,"0")}:00`)}return new Date(`${e}T${t}:00`)}
 async function showEventBookings(e){const t=await fetch(API+"/events"),n=await t.json(),a=n.events.find(t=>t.id===e);window.__eventsCache=n.events;const i=document.getElementById("modal"),o=document.getElementById("modal-body");if(!a){return}o.innerHTML=`<h3>${a.title} – Bookings</h3>`;if(0===a.bookings.length)o.innerHTML+='<p class="muted">No bookings yet.</p>';else{let tHtml="<table style='width:100%; border-collapse: collapse;'>";tHtml+="<tr style='background:#111'><th style='border:1px solid #333; padding:8px; text-align:left'>Seat</th><th style='border:1px solid #333; padding:8px; text-align:left'>Name</th><th style='border:1px solid #333; padding:8px; text-align:left'>Reg</th><th style='border:1px solid #333; padding:8px; text-align:left'>Role</th><th style='border:1px solid #333; padding:8px; text-align:left'>Action</th></tr>";a.bookings.forEach(r=>{tHtml+=`<tr><td style='border:1px solid #333; padding:8px'>${r.seat}</td><td style='border:1px solid #333; padding:8px'>${r.name}</td><td style='border:1px solid #333; padding:8px'>${r.regNumber}</td><td style='border:1px solid #333; padding:8px'>${r.role}</td><td style='border:1px solid #333; padding:8px'><button class='btn' style='padding:6px 10px; width:auto; color: var(--red-accent); border-color: var(--red-accent);' onclick="organizerCancelBooking(${a.id}, '${r.regNumber}')">Cancel</button></td></tr>`}),tHtml+="</table>",o.innerHTML+=tHtml,o.innerHTML+=`<div style="margin-top:16px; text-align:center;"><button class="btn primary" onclick="downloadBookingsReport(${a.id}, '${a.title.replace(/'/g, "&#39;")}', '${a.date}')">📊 Download Report</button></div>`}i.style.display="flex"; try{ if(__modalIntervals[`bookings-${e}`]) clearInterval(__modalIntervals[`bookings-${e}`]); __modalIntervals[`bookings-${e}`] = setInterval(()=>{ try{ showEventBookings(e); }catch{} }, 5000); }catch{} }
 async function organizerCancelBooking(eventId,targetReg){if(!currentUser||currentUser.role!=="ORGANIZER")return; if(!confirm("Cancel this user's ticket?"))return;try{const e=await fetch(API+"/tickets/admin-cancel",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId,targetRegNumber:targetReg,organizerRegNumber:currentUser.regNumber})}),t=await e.json();e.ok&&t.ok?(alert("Ticket cancelled. User will be notified."),showEventBookings(eventId),renderEvents()):alert("Error: "+(t.error||"Failed to cancel booking"))}catch(e){alert("Network error")}}
@@ -2863,8 +2863,8 @@ function startCountdownTimers() {
     countdownInterval = setInterval(() => {
         document.querySelectorAll('[id^="countdown-"]').forEach(el => {
             const startTime = new Date(el.dataset.startTime);
-            const now = new Date();
-            const diff = startTime - now;
+            const countdownTime = new Date();
+            const diff = startTime - countdownTime;
             if (diff > 0) {
                 const days = Math.floor(diff / (1000 * 60 * 60 * 24));
                 const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -3023,12 +3023,12 @@ async function renderAdminUsers(which){
      </div>
      <div>${list.map(u=>{
        const lastSeen = u.lastSeen ? new Date(u.lastSeen) : null;
-       const now = new Date();
+       const lastSeenTime = new Date();
        let lastSeenText = 'Never';
        let lastSeenColor = '#6b7280';
        
        if (lastSeen) {
-         const diffMs = now.getTime() - lastSeen.getTime();
+         const diffMs = lastSeenTime.getTime() - lastSeen.getTime();
          const diffMins = Math.floor(diffMs / (1000 * 60));
          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -3186,10 +3186,10 @@ async function renderAdminEvents(){
       ${list.length === 0 ? '<p class="muted">No events found.</p>' : list.map(e=>{
         const startTime = new Date(`${e.date}T${e.time}`);
         const endTime = new Date(startTime.getTime() + (e.duration || 0) * 60000);
-        const now = new Date();
+        const eventTime = new Date();
         let status = "upcoming";
-        if (now >= startTime && now < endTime) status = "live";
-        else if (now >= endTime) status = "past";
+        if (eventTime >= startTime && eventTime < endTime) status = "live";
+        else if (eventTime >= endTime) status = "past";
         
         const statusColor = status === 'live' ? '#10b981' : status === 'past' ? '#6b7280' : '#3b82f6';
         const statusText = status === 'live' ? '🔴 LIVE' : status === 'past' ? '✅ ENDED' : '⏳ UPCOMING';
@@ -3728,8 +3728,20 @@ function escapeHtml(s){
 function initializeApp() {
     try {
         console.log("🚀 Initializing Campus Event Hub...");
-        console.log("🔍 API_BASE:", API_BASE);
-        console.log("🔍 API:", API);
+        
+        // Ensure API_BASE is defined
+        if (typeof API_BASE === 'undefined') {
+            console.error("❌ API_BASE not defined, retrying in 100ms...");
+            setTimeout(initializeApp, 100);
+            return;
+        }
+        
+        // Ensure required functions are defined
+        if (typeof showLogin === 'undefined' || typeof loadUserSession === 'undefined' || typeof renderTabs === 'undefined') {
+            console.error("❌ Required functions not defined, retrying in 100ms...");
+            setTimeout(initializeApp, 100);
+            return;
+        }
         
         // Check if user is already logged in
         const savedUser = loadUserSession();
