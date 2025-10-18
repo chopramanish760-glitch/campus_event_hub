@@ -4,12 +4,9 @@ const multer = require("multer");
 const path = require("path");
 const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
-const compression = require("compression");
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(compression()); // Enable gzip compression
 app.use(express.json({ limit: '10mb' })); // Increase JSON limit for large uploads
 app.use(cors());
 
@@ -54,14 +51,6 @@ let db = null;
 let collection = null;
 let gridFSBucket = null;
 
-// In-memory cache for better performance
-const cache = {
-  data: null,
-  lastUpdated: null,
-  cacheTimeout: 30000, // 30 seconds cache
-  userSessions: new Map(), // Cache user sessions
-  eventCache: new Map() // Cache events
-};
 
 // Initialize MongoDB connection
 async function initMongoDB() {
@@ -280,27 +269,7 @@ async function updateUserLastSeen(regNumber) {
   }
 }
 
-// Cache invalidation function
-function invalidateCache() {
-  cache.data = null;
-  cache.lastUpdated = null;
-  cache.userSessions.clear();
-  console.log("🔄 Cache invalidated - fresh data will be loaded");
-}
-
-// Broadcast cache invalidation to all SSE clients
-function broadcastCacheInvalidation() {
-  const message = `data: ${JSON.stringify({ type: 'cache_invalidated', timestamp: Date.now() })}\n\n`;
-  sseClients.forEach(client => {
-    try {
-      client.write(message);
-    } catch (err) {
-      console.error('Failed to send cache invalidation to client:', err);
-    }
-  });
-}
-
-// Load data from MongoDB (permanent storage) with caching
+// Load data from MongoDB (permanent storage)
 async function loadData() {
         const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   
@@ -308,13 +277,6 @@ async function loadData() {
     console.log("📄 MongoDB not available, using default data");
     return base;
   }
-  
-  // Cache temporarily disabled to fix event display issues
-  // const now = Date.now();
-  // if (cache.data && cache.lastUpdated && (now - cache.lastUpdated) < cache.cacheTimeout) {
-  //   console.log("📊 Using cached data");
-  //   return cache.data;
-  // }
   
   try {
     const result = await collection.findOne({ type: "app_data" });
@@ -327,10 +289,6 @@ async function loadData() {
         messages: result.data.messages || [],
         admin: result.data.admin || DEFAULT_ADMIN
       };
-      
-      // Cache temporarily disabled
-      // cache.data = data;
-      // cache.lastUpdated = now;
       
       console.log(`📊 Loaded from MongoDB: ${data.users?.length || 0} users, ${data.events?.length || 0} events, ${data.media?.length || 0} media`);
       return data;
@@ -384,11 +342,6 @@ async function saveData(data) {
     
     console.log(`✅ Data saved to MongoDB: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
     console.log(`🔍 MongoDB result: matched=${result.matchedCount}, modified=${result.modifiedCount}, upserted=${result.upsertedCount}`);
-    
-    // Cache temporarily disabled
-    // cache.data = validatedData;
-    // cache.lastUpdated = Date.now();
-    // broadcastCacheInvalidation();
     
   } catch (err) {
     console.error('❌ Failed to save data to MongoDB:', err);
@@ -459,14 +412,6 @@ app.post("/api/login", async (req, res) => {
   const regNumber = String((req.body.regNumber||'')).trim();
   const password = String((req.body.password||''));
     
-    // User session cache temporarily disabled
-    // const cacheKey = `${regNumber}:${password}`;
-    // if (cache.userSessions.has(cacheKey)) {
-    //   const cachedUser = cache.userSessions.get(cacheKey);
-    //   console.log("📊 Using cached user session");
-    //   return res.json({ ok: true, user: cachedUser });
-    // }
-    
     const data = await loadData();
   const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
   if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
@@ -474,11 +419,6 @@ app.post("/api/login", async (req, res) => {
     // Update last seen on login
     user.lastSeen = new Date().toISOString();
     await saveData(data);
-    
-    // Cache user session for 5 minutes
-    // Cache temporarily disabled
-    // cache.userSessions.set(cacheKey, user);
-    // setTimeout(() => cache.userSessions.delete(cacheKey), 300000); // 5 minutes
     
   res.json({ ok: true, user });
   } catch (err) {
