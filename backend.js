@@ -2,7 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
-const { MongoClient, GridFSBucket } = require("mongodb");
+const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
@@ -1515,7 +1515,17 @@ app.put("/api/profile", async (req, res) => {
 app.get("/api/media/file/:fileId", async (req, res) => {
   try {
     const fileId = req.params.fileId;
-    const downloadStream = gridFSBucket.openDownloadStream(fileId);
+    
+    // Convert string to ObjectId
+    let objectId;
+    try {
+      objectId = new ObjectId(fileId);
+    } catch (err) {
+      console.error('Invalid ObjectId:', fileId);
+      return res.status(400).json({ ok: false, error: "Invalid file ID" });
+    }
+    
+    const downloadStream = gridFSBucket.openDownloadStream(objectId);
     
     downloadStream.on('error', (error) => {
       console.error('GridFS download error:', error);
@@ -1528,6 +1538,30 @@ app.get("/api/media/file/:fileId", async (req, res) => {
     });
     
     downloadStream.pipe(res);
+  } catch (err) {
+    console.error('GridFS endpoint error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Debug endpoint to list GridFS files
+app.get("/api/debug/gridfs", async (req, res) => {
+  try {
+    if (!gridFSBucket) {
+      return res.json({ ok: false, error: "GridFS not initialized" });
+    }
+    
+    const files = await gridFSBucket.find({}).toArray();
+    res.json({ 
+      ok: true, 
+      files: files.map(f => ({
+        id: f._id,
+        filename: f.filename,
+        length: f.length,
+        uploadDate: f.uploadDate,
+        metadata: f.metadata
+      }))
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
