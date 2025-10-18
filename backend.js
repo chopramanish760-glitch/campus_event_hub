@@ -45,6 +45,7 @@ const MONGODB_URI = "mongodb+srv://chopramanish760_db_user:Xg8dNsvyQ0YSYIjt@camp
 const DB_NAME = "campus_event_hub";
 const COLLECTION_NAME = "app_data";
 
+let client = null;
 let db = null;
 let collection = null;
 
@@ -60,7 +61,7 @@ async function initMongoDB() {
     console.log(`📋 MongoDB URI: ${MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials in logs
     
     // Use minimal configuration for better compatibility
-    const client = new MongoClient(MONGODB_URI);
+    client = new MongoClient(MONGODB_URI);
     
     console.log("🔍 Attempting to connect...");
     await client.connect();
@@ -284,6 +285,8 @@ async function loadData() {
 
 // Save data to MongoDB (permanent storage)
 async function saveData(data) {
+  console.log(`🔍 saveData called - collection exists: ${!!collection}, client exists: ${!!client}`);
+  
   if (!collection) {
     console.log("❌ MongoDB not available, cannot save data");
     return;
@@ -305,8 +308,10 @@ async function saveData(data) {
       admin: data.admin || DEFAULT_ADMIN
     };
     
+    console.log(`🔍 About to save: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
+    
     // Upsert (update or insert) the data
-    await collection.updateOne(
+    const result = await collection.updateOne(
       { type: "app_data" },
       { 
         $set: { 
@@ -319,6 +324,7 @@ async function saveData(data) {
     );
     
     console.log(`✅ Data saved to MongoDB: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
+    console.log(`🔍 MongoDB result: matched=${result.matchedCount}, modified=${result.modifiedCount}, upserted=${result.upsertedCount}`);
     
   } catch (err) {
     console.error('❌ Failed to save data to MongoDB:', err);
@@ -442,10 +448,10 @@ app.post("/api/reset-password", (req, res) => {
 });
 app.get("/api/users/:regNumber", (req, res) => { const data = loadData(); const user = data.users.find(u => u.regNumber === req.params.regNumber); if (!user) { return res.status(404).json({ ok: false, error: "User not found" }); } const { password, ...userProfile } = user; res.json({ ok: true, user: userProfile }); });
 // Admin list endpoints
-app.get('/api/admin/users', (req, res) => { const data = loadData(); const students = data.users.filter(u => u.role === 'STUDENT'); res.json({ ok: true, users: students }); });
-app.get('/api/admin/organizers', (req, res) => { const data = loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
+app.get('/api/admin/users', async (req, res) => { const data = await loadData(); const students = data.users.filter(u => u.role === 'STUDENT'); res.json({ ok: true, users: students }); });
+app.get('/api/admin/organizers', async (req, res) => { const data = await loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
 // Admin: pending organizer requests
-app.get('/api/admin/organizers/pending', (req,res)=>{ const data=loadData(); const list=(data.users||[]).filter(u=>u.organizerStatus==='PENDING'); res.json({ ok:true, users:list }); });
+app.get('/api/admin/organizers/pending', async (req,res)=>{ const data=await loadData(); const list=(data.users||[]).filter(u=>u.organizerStatus==='PENDING'); res.json({ ok:true, users:list }); });
 app.post('/api/admin/organizers/verify', (req,res)=>{ const data=loadData(); const { regNumber, decision, reason } = req.body; const u=data.users.find(x=>x.regNumber===regNumber); if(!u) return res.status(404).json({ ok:false, error:'User not found' }); if(u.organizerStatus!=='PENDING') return res.status(400).json({ ok:false, error:'No pending request' }); if(decision==='approve'){ u.organizerStatus='APPROVED'; u.role='ORGANIZER'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:"✅ Your organizer request has been approved. Organizer dashboard unlocked.", time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'approved' }); } else if(decision==='reject'){ u.organizerStatus='REJECTED'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:`❌ Your organizer request was rejected.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'rejected' }); } else { return res.status(400).json({ ok:false, error:'Invalid decision' }); } });
 // Admin remove organizer ownership -> set role to STUDENT
 app.post('/api/admin/organizers/remove', (req, res) => {
@@ -491,7 +497,7 @@ app.post('/api/admin/users/delete', (req, res) => {
   saveData(data); res.json({ ok:true });
 });
 // Admin events list
-app.get('/api/admin/events', (req, res) => { const data = loadData(); res.json({ ok:true, events: data.events }); });
+app.get('/api/admin/events', async (req, res) => { const data = await loadData(); res.json({ ok:true, events: data.events }); });
 // Admin delete event with reason
 app.post('/api/admin/events/delete', (req,res)=>{ const data = loadData(); const { eventId, reason } = req.body; const i = data.events.findIndex(e=>e.id===Number(eventId)); if(i===-1) return res.status(404).json({ ok:false, error:'Event not found' }); const ev = data.events[i]; // delete media files
   const mediaToDelete = data.media.filter(m=>m.eventId===ev.id);
@@ -502,7 +508,7 @@ app.post('/api/admin/events/delete', (req,res)=>{ const data = loadData(); const
   data.notifications[ev.creatorRegNumber].unshift({ msg:`❌ Your event '${ev.title}' was deleted by admin.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false });
   data.events.splice(i,1); saveData(data); res.json({ ok:true }); });
 // Admin media list per event
-app.get('/api/admin/media/:eventId', (req,res)=>{ const data=loadData(); const id=Number(req.params.eventId); res.json({ ok:true, media: data.media.filter(m=>m.eventId===id) }); });
+app.get('/api/admin/media/:eventId', async (req,res)=>{ const data=await loadData(); const id=Number(req.params.eventId); res.json({ ok:true, media: data.media.filter(m=>m.eventId===id) }); });
 // Admin delete media item
 app.post('/api/admin/media/delete', (req,res)=>{ const data=loadData(); const { mediaId } = req.body; const i = data.media.findIndex(m=>m.id===Number(mediaId)); if(i===-1) return res.status(404).json({ ok:false, error:'Media not found' }); const m = data.media[i]; const ev = data.events.find(e=>e.id===m.eventId);
   try{ const fp=path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{};
@@ -514,7 +520,7 @@ app.post('/api/admin/media/delete', (req,res)=>{ const data=loadData(); const { 
 app.post('/api/admin/credentials', (req,res)=>{ const data=loadData(); const { username, password } = req.body; if(!username || !password){ return res.status(400).json({ ok:false, error:'Missing fields' }); } data.admin = { username, password }; saveData(data); res.json({ ok:true }); });
 
 // Admin stats & active users
-app.get('/api/admin/stats', (req,res)=>{ const data=loadData(); const totalUsers=(data.users||[]).length; const totalEvents=(data.events||[]).length; const totalOrganizers=(data.users||[]).filter(u=>u.role==='ORGANIZER').length; const activeCut=Date.now()-5*60*1000; const activeUsers=(data.users||[]).filter(u=>u.lastSeen && (new Date(u.lastSeen).getTime()>activeCut)).length; res.json({ ok:true, totalUsers, totalEvents, totalOrganizers, activeUsers }); });
+app.get('/api/admin/stats', async (req,res)=>{ const data=await loadData(); const totalUsers=(data.users||[]).length; const totalEvents=(data.events||[]).length; const totalOrganizers=(data.users||[]).filter(u=>u.role==='ORGANIZER').length; const activeCut=Date.now()-5*60*1000; const activeUsers=(data.users||[]).filter(u=>u.lastSeen && (new Date(u.lastSeen).getTime()>activeCut)).length; res.json({ ok:true, totalUsers, totalEvents, totalOrganizers, activeUsers }); });
 
 // Track last seen on notifications fetch
 app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData(); const reg = req.params.regNumber; const u=data.users.find(x=>x.regNumber===reg); if(u){ u.lastSeen=new Date().toISOString(); saveData(data); } res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
@@ -1148,9 +1154,9 @@ app.post('/api/data/import', (req, res) => {
 });
 
 // Data status endpoint
-app.get('/api/data/status', (req, res) => {
+app.get('/api/data/status', async (req, res) => {
   try {
-    const data = loadData();
+    const data = await loadData();
     const fileStats = fs.existsSync(PERSISTENT_DATA_FILE) ? fs.statSync(PERSISTENT_DATA_FILE) : null;
     const backupCount = fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
     

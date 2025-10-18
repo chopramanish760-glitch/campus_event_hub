@@ -2827,8 +2827,13 @@ function renderAdmin(){
     setAdminTab('users');
 }
 function setAdminTab(which){
+  console.log(`🔍 setAdminTab called with: ${which}`);
   document.querySelectorAll('.sub-nav-btn').forEach(b=>b.classList.remove('active'));
-  if(which==='users'){ document.getElementById('tab-users').classList.add('active'); renderAdminUsers('students'); }
+  if(which==='users'){ 
+    console.log(`🔍 Setting users tab active`);
+    document.getElementById('tab-users').classList.add('active'); 
+    renderAdminUsers('students'); 
+  }
   if(which==='media'){ document.getElementById('tab-media').classList.add('active'); renderAdminMedia(); }
   if(which==='events'){ document.getElementById('tab-events').classList.add('active'); renderAdminEvents(); }
   if(which==='verify'){ document.getElementById('tab-verify').classList.add('active'); renderAdminVerify(); }
@@ -2841,12 +2846,20 @@ function adminLogout(){
   try{ showLogin(); }catch{}
 }
 async function renderAdminUsers(which){
+    console.log(`🔍 renderAdminUsers called with: ${which}`);
     const pane = document.getElementById('admin-content');
+    console.log(`🔍 admin-content pane found: ${!!pane}`);
+    
     const isStudents = which==='students';
     const url = isStudents ? '/admin/users' : '/admin/organizers';
+    console.log(`🔍 Fetching from: ${API+url}`);
+    
     const res = await fetch(API+url);
     const data = await res.json();
+    console.log(`🔍 API response:`, data);
+    
     const list = (data.users||[]);
+    console.log(`🔍 Users list length: ${list.length}`);
   
   // Sort by last seen (most recent first)
   list.sort((a, b) => {
