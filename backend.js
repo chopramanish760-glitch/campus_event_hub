@@ -4,7 +4,6 @@ const multer = require("multer");
 const path = require("path");
 const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
-const ffmpeg = require("fluent-ffmpeg");
 const sharp = require("sharp");
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -1420,55 +1419,13 @@ const chatUpload = multer({
     cb(new Error('Only image and video files are allowed'));
   }
 });
-// Video compression function
-async function compressVideo(inputBuffer, filename) {
-  return new Promise((resolve, reject) => {
-    const tempInputPath = path.join(__dirname, 'temp', `input_${Date.now()}_${filename}`);
-    const tempOutputPath = path.join(__dirname, 'temp', `output_${Date.now()}_${filename}`);
-    
-    // Ensure temp directory exists
-    const tempDir = path.join(__dirname, 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    
-    // Write input buffer to temp file
-    fs.writeFileSync(tempInputPath, inputBuffer);
-    
-    ffmpeg(tempInputPath)
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .outputOptions([
-        '-preset fast',
-        '-crf 28', // Higher CRF = more compression, lower quality
-        '-maxrate 1M', // Limit bitrate to 1Mbps
-        '-bufsize 2M',
-        '-movflags +faststart', // Enable fast start for web playback
-        '-profile:v baseline',
-        '-level 3.0'
-      ])
-      .size('1280x720') // Resize to 720p max
-      .on('end', () => {
-        try {
-          const compressedBuffer = fs.readFileSync(tempOutputPath);
-          // Clean up temp files
-          fs.unlinkSync(tempInputPath);
-          fs.unlinkSync(tempOutputPath);
-          resolve(compressedBuffer);
-        } catch (error) {
-          reject(error);
-        }
-      })
-      .on('error', (err) => {
-        // Clean up temp files on error
-        try {
-          if (fs.existsSync(tempInputPath)) fs.unlinkSync(tempInputPath);
-          if (fs.existsSync(tempOutputPath)) fs.unlinkSync(tempOutputPath);
-        } catch {}
-        reject(err);
-      })
-      .save(tempOutputPath);
-  });
+// Simple video processing function (no external dependencies)
+async function processVideo(inputBuffer, filename) {
+  // For now, we'll just return the original buffer
+  // In a production environment, you could integrate with cloud services
+  // like AWS MediaConvert, Google Cloud Video Intelligence, or similar
+  console.log(`📹 Video processing: ${filename} (${inputBuffer.length} bytes) - using original file`);
+  return inputBuffer;
 }
 
 // Image compression function
@@ -1505,9 +1462,9 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     
     try {
       if (req.file.mimetype.startsWith('video/')) {
-        console.log(`🎬 Compressing video: ${req.file.originalname} (${originalSize} bytes)`);
-        processedBuffer = await compressVideo(req.file.buffer, req.file.originalname);
-        console.log(`✅ Video compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+        console.log(`🎬 Processing video: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await processVideo(req.file.buffer, req.file.originalname);
+        console.log(`✅ Video processed: ${originalSize} → ${processedBuffer.length} bytes`);
       } else if (req.file.mimetype.startsWith('image/')) {
         console.log(`🖼️ Compressing image: ${req.file.originalname} (${originalSize} bytes)`);
         processedBuffer = await compressImage(req.file.buffer);
@@ -1784,9 +1741,9 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
     
     try {
       if (req.file.mimetype.startsWith('video/')) {
-        console.log(`🎬 Compressing chat video: ${req.file.originalname} (${originalSize} bytes)`);
-        processedBuffer = await compressVideo(req.file.buffer, req.file.originalname);
-        console.log(`✅ Chat video compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+        console.log(`🎬 Processing chat video: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await processVideo(req.file.buffer, req.file.originalname);
+        console.log(`✅ Chat video processed: ${originalSize} → ${processedBuffer.length} bytes`);
       } else if (req.file.mimetype.startsWith('image/')) {
         console.log(`🖼️ Compressing chat image: ${req.file.originalname} (${originalSize} bytes)`);
         processedBuffer = await compressImage(req.file.buffer);
