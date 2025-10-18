@@ -1191,7 +1191,7 @@ app.get('/api/data/export', (req, res) => {
   }
 });
 
-app.post('/api/data/import', (req, res) => {
+app.post('/api/data/import', async (req, res) => {
   try{
     const payload = req.body;
     if(!payload || typeof payload !== 'object') return res.status(400).json({ ok:false, error:'Invalid payload' });
