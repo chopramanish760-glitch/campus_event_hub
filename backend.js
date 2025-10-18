@@ -256,7 +256,7 @@ async function updateUserLastSeen(regNumber) {
 
 // Load data from MongoDB (permanent storage)
 async function loadData() {
-  const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
+        const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   
   if (!collection) {
     console.log("📄 MongoDB not available, using default data");
@@ -357,35 +357,35 @@ function broadcast(eventName, data, targetReg) {
 app.post("/api/signup", async (req, res) => {
   try {
     const data = await loadData();
-    const name = String(req.body.name||'');
-    const surname = String(req.body.surname||'');
-    const age = req.body.age;
-    const gender = req.body.gender;
-    const email = String(req.body.email||'').trim();
-    const phone = String(req.body.phone||'').trim();
-    const regNumber = String(req.body.regNumber||'').trim();
-    const password = String(req.body.password||'');
-    const role = req.body.role;
-    if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
-    // Uniqueness validation across all users
-    if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
-    if (data.users.find(u => (u.email||'').toLowerCase() === String(email).toLowerCase())) { return res.status(400).json({ ok: false, error: "Email already in use" }); }
-    if (data.users.find(u => u.phone === phone)) { return res.status(400).json({ ok: false, error: "Phone already in use" }); }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
-    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
-    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
-    let finalRole = role;
-    let organizerStatus = undefined;
-    if (role === 'ORGANIZER') {
-      // Treat as request; user behaves as student until approved
-      finalRole = 'STUDENT';
-      organizerStatus = 'PENDING';
-    }
-    const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role: finalRole };
-    if (organizerStatus) user.organizerStatus = organizerStatus;
+  const name = String(req.body.name||'');
+  const surname = String(req.body.surname||'');
+  const age = req.body.age;
+  const gender = req.body.gender;
+  const email = String(req.body.email||'').trim();
+  const phone = String(req.body.phone||'').trim();
+  const regNumber = String(req.body.regNumber||'').trim();
+  const password = String(req.body.password||'');
+  const role = req.body.role;
+  if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
+  // Uniqueness validation across all users
+  if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
+  if (data.users.find(u => (u.email||'').toLowerCase() === String(email).toLowerCase())) { return res.status(400).json({ ok: false, error: "Email already in use" }); }
+  if (data.users.find(u => u.phone === phone)) { return res.status(400).json({ ok: false, error: "Phone already in use" }); }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
+  if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
+  let finalRole = role;
+  let organizerStatus = undefined;
+  if (role === 'ORGANIZER') {
+    // Treat as request; user behaves as student until approved
+    finalRole = 'STUDENT';
+    organizerStatus = 'PENDING';
+  }
+  const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role: finalRole };
+  if (organizerStatus) user.organizerStatus = organizerStatus;
     data.users.push(user); 
     await saveData(data);
-    return res.json({ ok: true, user });
+  return res.json({ ok: true, user });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -393,22 +393,22 @@ app.post("/api/signup", async (req, res) => {
 app.post("/api/login", async (req, res) => {
   try {
     const data = await loadData();
-    const regNumber = String((req.body.regNumber||'')).trim();
-    const password = String((req.body.password||''));
-    const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
-    if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
+  const regNumber = String((req.body.regNumber||'')).trim();
+  const password = String((req.body.password||''));
+  const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
+  if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
     
     // Update last seen on login
     user.lastSeen = new Date().toISOString();
     await saveData(data);
     
-    res.json({ ok: true, user });
+  res.json({ ok: true, user });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
-app.post("/api/admin/login", (req, res) => {
-  const data = loadData();
+app.post("/api/admin/login", async (req, res) => {
+  const data = await loadData();
   const { username, password } = req.body;
   const stored = data.admin || DEFAULT_ADMIN;
   const uIn = String((username||'').trim());
@@ -422,23 +422,23 @@ app.post("/api/admin/login", (req, res) => {
 });
 
 // Admin: reveal current admin username (no password) to help diagnose mismatches
-app.get('/api/admin/who', (req,res)=>{
+app.get('/api/admin/who', async (req,res)=>{
   try{
-    const d = loadData();
+    const d = await loadData();
     const stored = d.admin || DEFAULT_ADMIN;
     res.json({ ok:true, username: stored.username || DEFAULT_ADMIN.username });
   }catch{ res.status(500).json({ ok:false }); }
 });
-app.post("/api/reset-password", (req, res) => {
-  const data = loadData(); const { regNumber, role, newPassword } = req.body;
+app.post("/api/reset-password", async (req, res) => {
+  const data = await loadData(); const { regNumber, role, newPassword } = req.body;
   const user = data.users.find(u => u.regNumber === regNumber && u.role === role);
   if (!user) { return res.status(404).json({ ok: false, error: "User not found or role does not match." }); }
   user.password = newPassword; if (!data.notifications) data.notifications = {}; if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: "🔐 Your password has been successfully reset.", time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   
   // Update user's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try {
     broadcast('events_changed', { reason: 'ticket_cancelled', eventId: event.id });
@@ -446,7 +446,7 @@ app.post("/api/reset-password", (req, res) => {
   } catch {}
   res.json({ ok: true });
 });
-app.get("/api/users/:regNumber", (req, res) => { const data = loadData(); const user = data.users.find(u => u.regNumber === req.params.regNumber); if (!user) { return res.status(404).json({ ok: false, error: "User not found" }); } const { password, ...userProfile } = user; res.json({ ok: true, user: userProfile }); });
+app.get("/api/users/:regNumber", async (req, res) => { const data = await loadData(); const user = data.users.find(u => u.regNumber === req.params.regNumber); if (!user) { return res.status(404).json({ ok: false, error: "User not found" }); } const { password, ...userProfile } = user; res.json({ ok: true, user: userProfile }); });
 // Admin list endpoints
 app.get('/api/admin/users', async (req, res) => { const data = await loadData(); const students = data.users.filter(u => u.role === 'STUDENT'); res.json({ ok: true, users: students }); });
 app.get('/api/admin/organizers', async (req, res) => { const data = await loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
@@ -478,8 +478,8 @@ app.post('/api/admin/organizers/verify', async (req,res)=>{
   } 
 });
 // Admin remove organizer ownership -> set role to STUDENT
-app.post('/api/admin/organizers/remove', (req, res) => {
-  const data = loadData();
+app.post('/api/admin/organizers/remove', async (req, res) => {
+  const data = await loadData();
   const { regNumber } = req.body;
   const u = data.users.find(x=>x.regNumber===regNumber);
   if(!u) return res.status(404).json({ ok:false, error:'User not found' });
@@ -487,12 +487,12 @@ app.post('/api/admin/organizers/remove', (req, res) => {
   if(!data.notifications) data.notifications = {};
   if(!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: "⚠️ Your organizer role has been removed by admin. You now have student access.", time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   res.json({ ok:true });
 });
 // Admin delete student account (hard delete)
-app.post('/api/admin/users/delete', (req, res) => {
-  const data = loadData(); const { regNumber } = req.body;
+app.post('/api/admin/users/delete', async (req, res) => {
+  const data = await loadData(); const { regNumber } = req.body;
   const idx = data.users.findIndex(x=>x.regNumber===regNumber);
   if(idx===-1) return res.status(404).json({ ok:false, error:'User not found' });
   // Remove bookings, waitlist, volunteer entries
@@ -518,7 +518,8 @@ app.post('/api/admin/users/delete', (req, res) => {
   if(data.notifications && data.notifications[regNumber]) delete data.notifications[regNumber];
   // Finally remove user
   data.users.splice(idx,1);
-  saveData(data); res.json({ ok:true });
+  await saveData(data); 
+  res.json({ ok:true });
 });
 // Admin events list
 app.get('/api/admin/events', async (req, res) => { const data = await loadData(); res.json({ ok:true, events: data.events }); });
@@ -571,14 +572,14 @@ app.post('/api/admin/credentials', async (req,res)=>{
 app.get('/api/admin/stats', async (req,res)=>{ const data=await loadData(); const totalUsers=(data.users||[]).length; const totalEvents=(data.events||[]).length; const totalOrganizers=(data.users||[]).filter(u=>u.role==='ORGANIZER').length; const activeCut=Date.now()-5*60*1000; const activeUsers=(data.users||[]).filter(u=>u.lastSeen && (new Date(u.lastSeen).getTime()>activeCut)).length; res.json({ ok:true, totalUsers, totalEvents, totalOrganizers, activeUsers }); });
 
 // Track last seen on notifications fetch
-app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData(); const reg = req.params.regNumber; const u=data.users.find(x=>x.regNumber===reg); if(u){ u.lastSeen=new Date().toISOString(); saveData(data); } res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
+app.get("/api/notifications/:regNumber", async (req, res) => { const data = await loadData(); const reg = req.params.regNumber; const u=data.users.find(x=>x.regNumber===reg); if(u){ u.lastSeen=new Date().toISOString(); await saveData(data); } res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
 
 // Admin clear-all (dangerous): wipes users, events, media, notifications, messages, and uploads folder
-app.post('/api/admin/clear-all', (req,res)=>{
+app.post('/api/admin/clear-all', async (req,res)=>{
   const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   // wipe uploads directory files
   try { if (fs.existsSync(UPLOAD_DIR)) { fs.readdirSync(UPLOAD_DIR).forEach(f=>{ try{ fs.unlinkSync(path.join(UPLOAD_DIR,f)); }catch{} }); } } catch{}
-  saveData(base);
+  await saveData(base);
   res.json({ ok:true });
 });
 
@@ -625,7 +626,7 @@ app.post("/api/events", async (req, res) => {
     data.notifications[u.regNumber].unshift({ msg: notificationMsg, time: new Date().toISOString(), read: false });
   });
   // No volunteer notifications at creation time
-  saveData(data);
+  await saveData(data);
   
   // Update organizer's last seen
   await updateUserLastSeen(creatorRegNumber);
@@ -634,8 +635,8 @@ app.post("/api/events", async (req, res) => {
   res.json({ ok: true, event: newEvent });
 });
 
-app.put("/api/events/:id", (req, res) => {
-  const data = loadData(); const id = parseInt(req.params.id);
+app.put("/api/events/:id", async (req, res) => {
+  const data = await loadData(); const id = parseInt(req.params.id);
   const event = data.events.find(e => e.id === id);
   if (!event) return res.status(404).json({ ok: false, error: "Event not found" });
   const { title, date, time, venue, capacity, duration, category, regNumber } = req.body;
@@ -707,17 +708,17 @@ app.put("/api/events/:id", (req, res) => {
     if (!data.notifications[booking.regNumber]) data.notifications[booking.regNumber] = [];
     data.notifications[booking.regNumber].unshift({ msg: notificationMsg, time: new Date().toISOString(), read: false });
   });
-  saveData(data);
+  await saveData(data);
   
   // Update organizer's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try { broadcast('events_changed', { reason: 'updated', eventId: event.id }); } catch {}
   res.json({ ok: true, event });
 });
 
-app.delete("/api/events/:id", (req, res) => {
-  const data = loadData(); const id = parseInt(req.params.id);
+app.delete("/api/events/:id", async (req, res) => {
+  const data = await loadData(); const id = parseInt(req.params.id);
   const eventIndex = data.events.findIndex(e => e.id === id);
   if (eventIndex === -1) return res.status(404).json({ ok: false, error: "Event not found" });
   const event = data.events[eventIndex];
@@ -735,10 +736,10 @@ app.delete("/api/events/:id", (req, res) => {
     data.notifications[booking.regNumber].unshift({ msg: notificationMsg, time: new Date().toISOString(), read: false });
   });
   data.events.splice(eventIndex, 1);
-  saveData(data);
+  await saveData(data);
   
   // Update organizer's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try { broadcast('events_changed', { reason: 'deleted', eventId: id }); } catch {}
   res.json({ ok: true, message: "Event and associated media deleted successfully" });
@@ -787,7 +788,7 @@ app.get("/api/events", async (req, res) => {
       }
     }
   });
-  if (dataWasModified) { saveData(data); }
+  if (dataWasModified) { await saveData(data); }
   const augmentedEvents = data.events.map(event => {
       const creator = data.users.find(u => u.regNumber === event.creatorRegNumber);
       const eventMedia = data.media.filter(m => m.eventId === event.id);
@@ -810,7 +811,7 @@ app.post("/api/tickets", async (req, res) => {
   if (event.taken >= event.capacity) {
     if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
     data.notifications[regNumber].unshift({ msg: `⚠️ Event ${event.title} is full.`, time: new Date().toISOString(), read: false});
-    saveData(data); return res.status(400).json({ ok: false, error: "Venue is full" });
+    await saveData(data); return res.status(400).json({ ok: false, error: "Venue is full" });
   }
   event.taken += 1; const seatNumber = event.taken; const roleLetter = user.role === "ORGANIZER" ? "O" : "S";
   const booking = { regNumber, name: user.name, seat: seatNumber, role: roleLetter, eventId: event.id, bookedAt: new Date().toISOString(), via: (via === 'qr' ? 'qr' : 'app') };
@@ -818,7 +819,7 @@ app.post("/api/tickets", async (req, res) => {
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   const notifMsg = booking.via === 'qr' ? `🎟️ You booked a ticket via QR code for ${event.title}` : `🎟️ You booked a ticket for ${event.title}`;
   data.notifications[regNumber].unshift({ msg: notifMsg, time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   
   // Update user's last seen
   await updateUserLastSeen(regNumber);
@@ -853,10 +854,10 @@ app.delete("/api/tickets", async (req, res) => {
       data.notifications[user.regNumber].unshift({ msg: `✅ A seat opened up for '${event.title}'. You have been auto-booked from the waitlist.`, time: new Date().toISOString(), read: false });
     }
   }
-  saveData(data);
+  await saveData(data);
   
   // Update user's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try {
     broadcast('events_changed', { reason: 'ticket_cancelled', eventId: event.id });
@@ -866,8 +867,8 @@ app.delete("/api/tickets", async (req, res) => {
 });
 
 // Organizer cancels a specific user's ticket for an event
-app.post("/api/tickets/admin-cancel", (req, res) => {
-  const data = loadData();
+app.post("/api/tickets/admin-cancel", async (req, res) => {
+  const data = await loadData();
   const { eventId, targetRegNumber, organizerRegNumber } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: "Event not found" });
@@ -900,15 +901,15 @@ app.post("/api/tickets/admin-cancel", (req, res) => {
     }
   }
 
-  saveData(data);
+  await saveData(data);
   try {
     broadcast('events_changed', { reason: 'ticket_cancelled_by_organizer', eventId: event.id });
     broadcast('tickets_changed', { reason: 'cancelled_by_organizer', eventId: event.id }, targetRegNumber);
   } catch {}
   res.json({ ok: true });
 });
-app.get("/api/tickets/:regNumber", (req, res) => {
-  const data = loadData(); const reg = req.params.regNumber; let myTickets = [];
+app.get("/api/tickets/:regNumber", async (req, res) => {
+  const data = await loadData(); const reg = req.params.regNumber; let myTickets = [];
   data.events.forEach(event => {
     // Booked tickets for this user
     event.bookings.forEach(b => {
@@ -953,8 +954,8 @@ app.get("/api/tickets/:regNumber", (req, res) => {
 });
 
 // ---------- Waitlist Endpoints ----------
-app.post("/api/waitlist", (req, res) => {
-  const data = loadData();
+app.post("/api/waitlist", async (req, res) => {
+  const data = await loadData();
   const { eventId, regNumber } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   const user = data.users.find(u => u.regNumber === regNumber);
@@ -967,10 +968,10 @@ app.post("/api/waitlist", (req, res) => {
   if (!data.notifications) data.notifications = {};
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `📝 You joined the waitlist for '${event.title}'. We'll auto-book if a seat opens.`, time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   
   // Update user's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try {
     broadcast('events_changed', { reason: 'waitlist_joined', eventId: event.id });
@@ -981,8 +982,8 @@ app.post("/api/waitlist", (req, res) => {
 
 // ---------- Volunteer Endpoints ----------
 // List volunteers for an event (organizer only)
-app.get('/api/volunteers/:eventId', (req, res) => {
-  const data = loadData();
+app.get('/api/volunteers/:eventId', async (req, res) => {
+  const data = await loadData();
   const { eventId } = req.params;
   const { organizerReg } = req.query;
   const event = data.events.find(e => e.id === Number(eventId));
@@ -1043,10 +1044,10 @@ app.post('/api/volunteers/add', async (req, res) => {
   if (!data.notifications) data.notifications = {};
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `🤝 Organizer invited you to volunteer for '${event.title}' as '${roleName}'.`, time: new Date().toISOString(), read: false, type: 'volunteer_request', eventId: event.id, role: roleName });
-  saveData(data);
+  await saveData(data);
   
   // Update organizer's last seen
-  updateUserLastSeen(organizerReg);
+  await updateUserLastSeen(organizerReg);
   
   res.json({ ok: true, request });
 });
@@ -1071,10 +1072,10 @@ app.post('/api/volunteers/remove', async (req, res) => {
   if (!data.notifications) data.notifications = {};
   if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
   data.notifications[regNumber].unshift({ msg: `❌ Your volunteer role for '${event.title}' has been cancelled.`, time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   
   // Update organizer's last seen
-  updateUserLastSeen(organizerReg);
+  await updateUserLastSeen(organizerReg);
   
   try { broadcast('events_changed', { reason: 'volunteer_removed', eventId: event.id }); } catch {}
   res.json({ ok: true, removed });
@@ -1097,7 +1098,7 @@ app.post('/api/volunteers/respond', async (req, res) => {
     event.volunteers = Array.isArray(event.volunteers) ? event.volunteers : [];
     if (event.volunteers.some(v => String(v.role||'') === vreq.role)) {
       vreq.status = 'rejected';
-      saveData(data);
+      await saveData(data);
       return res.status(400).json({ ok: false, error: 'Role already assigned to someone else.' });
     }
     const user = data.users.find(u => u.regNumber === regNumber);
@@ -1125,10 +1126,10 @@ app.post('/api/volunteers/respond', async (req, res) => {
     data.notifications[regNumber].unshift({ msg: `✅ You accepted volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `✅ ${regNumber} accepted volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
-    saveData(data);
+    await saveData(data);
     
     // Update user's last seen
-    updateUserLastSeen(regNumber);
+    await updateUserLastSeen(regNumber);
     
     try { broadcast('events_changed', { reason: 'volunteer_accepted', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'accepted', volunteer });
@@ -1139,10 +1140,10 @@ app.post('/api/volunteers/respond', async (req, res) => {
     data.notifications[regNumber].unshift({ msg: `❌ You rejected volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
     if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
     data.notifications[event.creatorRegNumber].unshift({ msg: `❌ ${regNumber} rejected volunteer role '${vreq.role}' for '${event.title}'.`, time: new Date().toISOString(), read: false });
-    saveData(data);
+    await saveData(data);
     
     // Update user's last seen
-    updateUserLastSeen(regNumber);
+    await updateUserLastSeen(regNumber);
     
     try { broadcast('events_changed', { reason: 'volunteer_rejected', eventId: event.id }); } catch {}
     return res.json({ ok: true, status: 'rejected' });
@@ -1170,7 +1171,7 @@ app.post('/api/volunteers/leave', async (req, res) => {
   data.notifications[regNumber].unshift({ msg: `🚪 You left the volunteer role for '${event.title}'.`, time: new Date().toISOString(), read: false });
   if (!data.notifications[event.creatorRegNumber]) data.notifications[event.creatorRegNumber] = [];
   data.notifications[event.creatorRegNumber].unshift({ msg: `ℹ️ ${regNumber} left the volunteer role for '${event.title}'.`, time: new Date().toISOString(), read: false });
-  saveData(data);
+  await saveData(data);
   res.json({ ok: true });
 });
 
@@ -1227,9 +1228,9 @@ app.get('/api/data/status', async (req, res) => {
 });
 
 // Data integrity check endpoint
-app.get('/api/data/integrity', (req, res) => {
+app.get('/api/data/integrity', async (req, res) => {
   try {
-    const data = loadData();
+    const data = await loadData();
     const issues = [];
     
     // Check for data consistency
@@ -1304,9 +1305,9 @@ app.get('/api/debug/uploads', (req, res) => {
 });
 
 // Data persistence verification endpoint
-app.get('/api/data/persistence', (req, res) => {
+app.get('/api/data/persistence', async (req, res) => {
   try {
-    const data = loadData();
+    const data = await loadData();
     const fileStats = fs.statSync(PERSISTENT_DATA_FILE);
     const uploadStats = fs.existsSync(PERSISTENT_UPLOAD_DIR) ? fs.readdirSync(PERSISTENT_UPLOAD_DIR).length : 0;
     const backupCount = fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
@@ -1345,8 +1346,8 @@ app.get('/api/data/persistence', (req, res) => {
   }
 });
 
-app.delete("/api/waitlist", (req, res) => {
-  const data = loadData();
+app.delete("/api/waitlist", async (req, res) => {
+  const data = await loadData();
   const { eventId, regNumber } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: "Event not found" });
@@ -1354,7 +1355,7 @@ app.delete("/api/waitlist", (req, res) => {
   const idx = event.waitlist.findIndex(w => w.regNumber === regNumber);
   if (idx === -1) return res.status(404).json({ ok: false, error: "Not on waitlist" });
   event.waitlist.splice(idx, 1);
-  saveData(data);
+  await saveData(data);
   try {
     broadcast('events_changed', { reason: 'waitlist_left', eventId: event.id });
     broadcast('tickets_changed', { reason: 'waitlist_left', eventId: event.id }, regNumber);
@@ -1363,8 +1364,8 @@ app.delete("/api/waitlist", (req, res) => {
 });
 
 // Organizer-only: view waitlist for an event
-app.get("/api/waitlist/:eventId", (req, res) => {
-  const data = loadData();
+app.get("/api/waitlist/:eventId", async (req, res) => {
+  const data = await loadData();
   const { eventId } = req.params;
   const { organizerReg } = req.query;
   const event = data.events.find(e => e.id === Number(eventId));
@@ -1377,8 +1378,8 @@ app.get("/api/waitlist/:eventId", (req, res) => {
   res.json({ ok: true, waitlist: list });
 });
 
-app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData(); const reg = req.params.regNumber; res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
-app.post("/api/notifications/mark-read", (req, res) => { const data = loadData(); const { regNumber } = req.body; if (data.notifications && data.notifications[regNumber]) { data.notifications[regNumber].forEach(n => n.read = true); saveData(data); } res.json({ ok: true }); });
+app.get("/api/notifications/:regNumber", async (req, res) => { const data = await loadData(); const reg = req.params.regNumber; res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
+app.post("/api/notifications/mark-read", async (req, res) => { const data = await loadData(); const { regNumber } = req.body; if (data.notifications && data.notifications[regNumber]) { data.notifications[regNumber].forEach(n => n.read = true); await saveData(data); } res.json({ ok: true }); });
 
 const upload = multer({ dest: PERSISTENT_UPLOAD_DIR });
 const chatUpload = multer({ dest: PERSISTENT_UPLOAD_DIR, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
@@ -1389,11 +1390,11 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
   try {
     const data = await loadData();
     const { eventId, regNumber } = req.body;
-    if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
-    const event = data.events.find(e => e.id === parseInt(eventId));
-    if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
-    if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
-    // Allow media uploads for upcoming, live, and past events
+  if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
+  const event = data.events.find(e => e.id === parseInt(eventId));
+  if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
+  if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
+  // Allow media uploads for upcoming, live, and past events
     const ext = path.extname(req.file.originalname); 
     const finalName = req.file.filename + ext; 
     const finalPath = path.join(PERSISTENT_UPLOAD_DIR, finalName);
@@ -1405,7 +1406,7 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     }
     
     // Move file to permanent location
-    fs.renameSync(req.file.path, finalPath);
+  fs.renameSync(req.file.path, finalPath);
     
     // Verify file was saved to live backend
     if (!fs.existsSync(finalPath)) {
@@ -1416,7 +1417,7 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     const fileStats = fs.statSync(finalPath);
     console.log(`📁 File saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
     
-    const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
+  const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
     const media = { 
       id: Date.now(), 
       eventId: parseInt(eventId), 
@@ -1436,28 +1437,28 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
-app.delete("/api/media/:mediaId", (req, res) => {
-  const data = loadData(); const mediaId = parseInt(req.params.mediaId); const { regNumber } = req.body;
+app.delete("/api/media/:mediaId", async (req, res) => {
+  const data = await loadData(); const mediaId = parseInt(req.params.mediaId); const { regNumber } = req.body;
   const mediaIndex = data.media.findIndex(m => m.id === mediaId);
   if (mediaIndex === -1) { return res.status(404).json({ ok: false, error: "Media not found." }); }
   const media = data.media[mediaIndex];
   const event = data.events.find(e => e.id === media.eventId);
   if (event && event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to delete this media." }); }
   try { const filePath = path.join(__dirname, media.url); if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); } } catch (err) { console.error("Failed to delete media file:", err); }
-  data.media.splice(mediaIndex, 1); saveData(data);
+  data.media.splice(mediaIndex, 1); await saveData(data);
   res.json({ ok: true, message: "Media deleted successfully." });
 });
 
 
 // Update user profile endpoint
-app.put("/api/profile", (req, res) => {
+app.put("/api/profile", async (req, res) => {
   const { regNumber, department, bloodGroup, address, branch, pincode } = req.body;
   
   if (!regNumber) {
     return res.status(400).json({ ok: false, error: "Registration number is required." });
   }
   
-  const data = loadData();
+  const data = await loadData();
   const userIndex = data.users.findIndex(u => u.regNumber === regNumber);
   
   if (userIndex === -1) {
@@ -1471,10 +1472,10 @@ app.put("/api/profile", (req, res) => {
   if (branch) data.users[userIndex].branch = branch;
   if (pincode) data.users[userIndex].pincode = pincode;
   
-  saveData(data);
+  await saveData(data);
   
   // Update user's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
 });
@@ -1520,13 +1521,13 @@ app.post("/api/messages", async (req, res) => {
   data.notifications[toReg].unshift({ msg: `💬 New message on '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
   data.notifications[fromReg].unshift({ msg: `✅ Message sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
 
-  saveData(data);
+  await saveData(data);
   res.json({ ok: true, message: msg });
 });
 
 // Get conversation (thread) between two regs for an event
-app.get("/api/messages/thread", (req, res) => {
-  const data = loadData();
+app.get("/api/messages/thread", async (req, res) => {
+  const data = await loadData();
   const { eventId, regA, regB } = req.query;
   if (!eventId || !regA || !regB) return res.status(400).json({ ok: false, error: "Missing parameters." });
   const event = data.events.find(e => e.id === Number(eventId));
@@ -1536,8 +1537,8 @@ app.get("/api/messages/thread", (req, res) => {
 });
 
 // For organizer: list distinct user conversations for an event
-app.get("/api/messages/conversations", (req, res) => {
-  const data = loadData();
+app.get("/api/messages/conversations", async (req, res) => {
+  const data = await loadData();
   const { eventId, organizerReg } = req.query;
   if (!eventId || !organizerReg) return res.status(400).json({ ok: false, error: "Missing parameters." });
   const event = data.events.find(e => e.id === Number(eventId));
@@ -1568,18 +1569,18 @@ app.get("/api/messages/conversations", (req, res) => {
 app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
   try {
     const data = await loadData();
-    const { eventId, fromReg, toReg } = req.body;
-    if (!req.file || !eventId || !fromReg || !toReg) {
-      return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
-    }
-    const event = data.events.find(e => e.id === Number(eventId));
-    if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
-    const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
-    const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
-    const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
-    if (!isOrganizer && !isBookedUser && !isVolunteer) {
-      return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
-    }
+  const { eventId, fromReg, toReg } = req.body;
+  if (!req.file || !eventId || !fromReg || !toReg) {
+    return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
+  }
+  const event = data.events.find(e => e.id === Number(eventId));
+  if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
+  const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
+  const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
+  const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
+  if (!isOrganizer && !isBookedUser && !isVolunteer) {
+    return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
+  }
     
     // Ensure uploads directory exists
     if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
