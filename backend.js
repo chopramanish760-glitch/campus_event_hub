@@ -2,7 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
-const { MongoClient } = require("mongodb");
+const { MongoClient, GridFSBucket } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
@@ -48,6 +48,7 @@ const COLLECTION_NAME = "app_data";
 let client = null;
 let db = null;
 let collection = null;
+let gridFSBucket = null;
 
 // Initialize MongoDB connection
 async function initMongoDB() {
@@ -71,6 +72,9 @@ async function initMongoDB() {
     db = client.db(DB_NAME);
     collection = db.collection(COLLECTION_NAME);
     
+    // Initialize GridFS bucket for media storage
+    gridFSBucket = new GridFSBucket(db, { bucketName: 'media' });
+    
     // Test a simple operation
     console.log("🔍 Testing database operations...");
     await db.admin().ping();
@@ -81,6 +85,7 @@ async function initMongoDB() {
     console.log("📊 Database indexes created");
     
     console.log("✅ Connected to MongoDB Atlas successfully!");
+    console.log("📁 GridFS bucket initialized for media storage");
     return true;
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err.message);
@@ -1308,35 +1313,38 @@ app.get('/api/debug/uploads', (req, res) => {
 app.get('/api/data/persistence', async (req, res) => {
   try {
     const data = await loadData();
-    const fileStats = fs.statSync(PERSISTENT_DATA_FILE);
-    const uploadStats = fs.existsSync(PERSISTENT_UPLOAD_DIR) ? fs.readdirSync(PERSISTENT_UPLOAD_DIR).length : 0;
-    const backupCount = fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
+    
+    // Check if MongoDB is connected
+    const mongoConnected = !!collection;
     
     res.json({
       ok: true,
       persistence: {
+        storageType: mongoConnected ? "MongoDB Atlas + GridFS" : "Local File System",
+        mongoConnected: mongoConnected,
         dataFile: {
-          exists: fs.existsSync(PERSISTENT_DATA_FILE),
-          path: PERSISTENT_DATA_FILE,
-          size: fileStats.size,
-          lastModified: fileStats.mtime.toISOString(),
+          exists: true,
+          path: mongoConnected ? "MongoDB Atlas" : PERSISTENT_DATA_FILE,
+          size: mongoConnected ? "N/A (MongoDB)" : (fs.existsSync(PERSISTENT_DATA_FILE) ? fs.statSync(PERSISTENT_DATA_FILE).size : 0),
+          lastModified: mongoConnected ? "N/A (MongoDB)" : (fs.existsSync(PERSISTENT_DATA_FILE) ? fs.statSync(PERSISTENT_DATA_FILE).mtime : null),
           readable: true
         },
         uploadsFolder: {
-          exists: fs.existsSync(PERSISTENT_UPLOAD_DIR),
-          path: PERSISTENT_UPLOAD_DIR,
-          fileCount: uploadStats
+          exists: true,
+          path: mongoConnected ? "GridFS Bucket" : PERSISTENT_UPLOAD_DIR,
+          fileCount: mongoConnected ? "N/A (GridFS)" : (fs.existsSync(PERSISTENT_UPLOAD_DIR) ? fs.readdirSync(PERSISTENT_UPLOAD_DIR).length : 0)
         },
         backups: {
-          count: backupCount,
-          path: PERSISTENT_BACKUP_DIR,
-          exists: fs.existsSync(PERSISTENT_BACKUP_DIR)
+          count: mongoConnected ? "N/A (MongoDB)" : (fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0),
+          path: mongoConnected ? "MongoDB Atlas" : PERSISTENT_BACKUP_DIR,
+          exists: true
         },
         dataCounts: {
           users: data.users?.length || 0,
           events: data.events?.length || 0,
           media: data.media?.length || 0,
-          messages: data.messages?.length || 0
+          messages: data.messages?.length || 0,
+          notifications: Object.keys(data.notifications || {}).length
         },
         timestamp: new Date().toISOString()
       }
@@ -1381,58 +1389,72 @@ app.get("/api/waitlist/:eventId", async (req, res) => {
 app.get("/api/notifications/:regNumber", async (req, res) => { const data = await loadData(); const reg = req.params.regNumber; res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
 app.post("/api/notifications/mark-read", async (req, res) => { const data = await loadData(); const { regNumber } = req.body; if (data.notifications && data.notifications[regNumber]) { data.notifications[regNumber].forEach(n => n.read = true); await saveData(data); } res.json({ ok: true }); });
 
-const upload = multer({ dest: PERSISTENT_UPLOAD_DIR });
-const chatUpload = multer({ dest: PERSISTENT_UPLOAD_DIR, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
-  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
-  cb(new Error('Only image and video files are allowed'));
-}});
+// Configure multer for memory storage (GridFS will handle file storage)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
+    cb(new Error('Only image and video files are allowed'));
+  }
+});
+const chatUpload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
+    cb(new Error('Only image and video files are allowed'));
+  }
+});
 app.post("/api/media", upload.single("file"), async (req, res) => {
   try {
     const data = await loadData();
     const { eventId, regNumber } = req.body;
-  if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
-  const event = data.events.find(e => e.id === parseInt(eventId));
-  if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
-  if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
-  // Allow media uploads for upcoming, live, and past events
-    const ext = path.extname(req.file.originalname); 
-    const finalName = req.file.filename + ext; 
-    const finalPath = path.join(PERSISTENT_UPLOAD_DIR, finalName);
+    if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
+    const event = data.events.find(e => e.id === parseInt(eventId));
+    if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
+    if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
     
-    // Ensure uploads directory exists
-    if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
-      fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
-      console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
-    }
+    // Store file in GridFS
+    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+      metadata: {
+        eventId: parseInt(eventId),
+        uploadedBy: regNumber,
+        uploadedAt: new Date(),
+        mimeType: req.file.mimetype
+      }
+    });
     
-    // Move file to permanent location
-  fs.renameSync(req.file.path, finalPath);
+    uploadStream.end(req.file.buffer);
     
-    // Verify file was saved to live backend
-    if (!fs.existsSync(finalPath)) {
-      console.error(`❌ File not saved to live backend: ${finalPath}`);
-      return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
-    }
+    uploadStream.on('error', (error) => {
+      console.error('GridFS upload error:', error);
+      return res.status(500).json({ ok: false, error: "Failed to save file to database" });
+    });
     
-    const fileStats = fs.statSync(finalPath);
-    console.log(`📁 File saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
-    
-  const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
-    const media = { 
-      id: Date.now(), 
-      eventId: parseInt(eventId), 
-      name: req.file.originalname, 
-      url: "/uploads/" + finalName, 
-      type,
-      size: fileStats.size
-    };
-    data.media.push(media); 
-    await saveData(data);
-    
-    // Update organizer's last seen
-    await updateUserLastSeen(regNumber);
-    
-    res.json({ ok: true, media });
+    uploadStream.on('finish', async () => {
+      const fileId = uploadStream.id;
+      const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
+      
+      const media = { 
+        id: Date.now(),
+        eventId: parseInt(eventId), 
+        name: req.file.originalname, 
+        url: `/api/media/file/${fileId}`, // GridFS endpoint
+        type,
+        size: req.file.size,
+        gridFSId: fileId
+      };
+      
+      data.media.push(media); 
+      await saveData(data);
+      
+      // Update organizer's last seen
+      await updateUserLastSeen(regNumber);
+      
+      console.log(`📁 File saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
+      res.json({ ok: true, media });
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -1444,7 +1466,17 @@ app.delete("/api/media/:mediaId", async (req, res) => {
   const media = data.media[mediaIndex];
   const event = data.events.find(e => e.id === media.eventId);
   if (event && event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to delete this media." }); }
-  try { const filePath = path.join(__dirname, media.url); if (fs.existsSync(filePath)) { fs.unlinkSync(filePath); } } catch (err) { console.error("Failed to delete media file:", err); }
+  
+  // Delete from GridFS if it exists
+  if (media.gridFSId) {
+    try {
+      await gridFSBucket.delete(media.gridFSId);
+      console.log(`📁 File deleted from GridFS: ${media.name}`);
+    } catch (err) {
+      console.error("Failed to delete file from GridFS:", err);
+    }
+  }
+  
   data.media.splice(mediaIndex, 1); await saveData(data);
   res.json({ ok: true, message: "Media deleted successfully." });
 });
@@ -1478,6 +1510,28 @@ app.put("/api/profile", async (req, res) => {
   await updateUserLastSeen(regNumber);
   
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
+});
+
+// GridFS file serving endpoint
+app.get("/api/media/file/:fileId", async (req, res) => {
+  try {
+    const fileId = req.params.fileId;
+    const downloadStream = gridFSBucket.openDownloadStream(fileId);
+    
+    downloadStream.on('error', (error) => {
+      console.error('GridFS download error:', error);
+      res.status(404).json({ ok: false, error: "File not found" });
+    });
+    
+    downloadStream.on('file', (file) => {
+      res.set('Content-Type', file.metadata?.mimeType || 'application/octet-stream');
+      res.set('Content-Disposition', `inline; filename="${file.filename}"`);
+    });
+    
+    downloadStream.pipe(res);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Static file serving setup (logging moved to initializeApp)
@@ -1569,53 +1623,67 @@ app.get("/api/messages/conversations", async (req, res) => {
 app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
   try {
     const data = await loadData();
-  const { eventId, fromReg, toReg } = req.body;
-  if (!req.file || !eventId || !fromReg || !toReg) {
-    return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
-  }
-  const event = data.events.find(e => e.id === Number(eventId));
-  if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
-  const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
-  const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
-  const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
-  if (!isOrganizer && !isBookedUser && !isVolunteer) {
-    return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
-  }
-    
-    // Ensure uploads directory exists
-    if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
-      fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
-      console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
+    const { eventId, fromReg, toReg } = req.body;
+    if (!req.file || !eventId || !fromReg || !toReg) {
+      return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
+    }
+    const event = data.events.find(e => e.id === Number(eventId));
+    if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
+    const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
+    const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
+    const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
+    if (!isOrganizer && !isBookedUser && !isVolunteer) {
+      return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
     }
     
-    const ext = path.extname(req.file.originalname);
-    const finalName = req.file.filename + ext;
-    const finalPath = path.join(PERSISTENT_UPLOAD_DIR, finalName);
+    // Store file in GridFS
+    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+      metadata: {
+        eventId: Number(eventId),
+        uploadedBy: fromReg,
+        uploadedAt: new Date(),
+        mimeType: req.file.mimetype,
+        type: 'chat'
+      }
+    });
     
-    // Move file to permanent location
-    fs.renameSync(req.file.path, finalPath);
+    uploadStream.end(req.file.buffer);
     
-    // Verify file was saved to live backend
-    if (!fs.existsSync(finalPath)) {
-      console.error(`❌ Chat file not saved to live backend: ${finalPath}`);
-      return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
-    }
+    uploadStream.on('error', (error) => {
+      console.error('GridFS chat upload error:', error);
+      return res.status(500).json({ ok: false, error: "Failed to save file to database" });
+    });
     
-    const fileStats = fs.statSync(finalPath);
-    console.log(`📁 Chat file saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
-    
-    const mediaType = req.file.mimetype.startsWith('image/') ? 'photo' : 'video';
-    const msg = { id: Date.now(), eventId: Number(eventId), fromReg, toReg, time: new Date().toISOString(), read: false, type: 'media', mediaType, url: '/uploads/' + finalName };
-    if (!data.messages) data.messages = [];
-    data.messages.push(msg);
-    if (!data.notifications) data.notifications = {};
-    if (!data.notifications[toReg]) data.notifications[toReg] = [];
-    if (!data.notifications[fromReg]) data.notifications[fromReg] = [];
-    const notifMeta = { type: 'chat', eventId: Number(eventId), fromReg, toReg };
-    data.notifications[toReg].unshift({ msg: `📎 New ${mediaType} in '${event.title}' chat`, time: new Date().toISOString(), read: false, ...notifMeta });
-    data.notifications[fromReg].unshift({ msg: `✅ ${mediaType === 'photo' ? 'Image' : 'Video'} sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
-    await saveData(data);
-    res.json({ ok: true, message: msg });
+    uploadStream.on('finish', async () => {
+      const fileId = uploadStream.id;
+      const mediaType = req.file.mimetype.startsWith('image/') ? 'photo' : 'video';
+      const msg = { 
+        id: Date.now(), 
+        eventId: Number(eventId), 
+        fromReg, 
+        toReg, 
+        time: new Date().toISOString(), 
+        read: false, 
+        type: 'media', 
+        mediaType, 
+        url: `/api/media/file/${fileId}`,
+        gridFSId: fileId
+      };
+      
+      if (!data.messages) data.messages = [];
+      data.messages.push(msg);
+      
+      if (!data.notifications) data.notifications = {};
+      if (!data.notifications[toReg]) data.notifications[toReg] = [];
+      if (!data.notifications[fromReg]) data.notifications[fromReg] = [];
+      const notifMeta = { type: 'chat', eventId: Number(eventId), fromReg, toReg };
+      data.notifications[toReg].unshift({ msg: `📎 New ${mediaType} in '${event.title}' chat`, time: new Date().toISOString(), read: false, ...notifMeta });
+      data.notifications[fromReg].unshift({ msg: `✅ ${mediaType === 'photo' ? 'Image' : 'Video'} sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
+      
+      await saveData(data);
+      console.log(`📁 Chat file saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
+      res.json({ ok: true, message: msg });
+    });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'Failed to save file.' });
   }

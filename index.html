@@ -3537,22 +3537,14 @@ async function renderAdminDebug() {
         
         ${persistenceInfo ? `
         <div class="card" style="margin-bottom: 20px;">
-            <h4>💾 Live Backend Persistence</h4>
-            <div style="color: ${persistenceInfo.dataFile.exists ? '#10b981' : '#ef4444'}; font-weight: bold; margin-bottom: 10px;">
-                ${persistenceInfo.dataFile.exists ? '✅ Data.json exists' : '❌ Data.json missing'}
+            <h4>💾 MongoDB Atlas Storage</h4>
+            <div style="color: #10b981; font-weight: bold; margin-bottom: 10px;">
+                ✅ Data stored in MongoDB Atlas (permanent)
             </div>
             <div class="kv">
-                <b>Data File:</b> <span class="value">${persistenceInfo.dataFile.path}</span>
-                <b>File Size:</b> <span class="value">${persistenceInfo.dataFile.size} bytes</span>
-                <b>Last Modified:</b> <span class="value">${new Date(persistenceInfo.dataFile.lastModified).toLocaleString()}</span>
-            </div>
-            <div style="color: ${persistenceInfo.uploadsFolder.exists ? '#10b981' : '#ef4444'}; font-weight: bold; margin: 10px 0;">
-                ${persistenceInfo.uploadsFolder.exists ? '✅ Uploads folder exists' : '❌ Uploads folder missing'}
-            </div>
-            <div class="kv">
-                <b>Uploads Folder:</b> <span class="value">${persistenceInfo.uploadsFolder.path}</span>
-                <b>File Count:</b> <span class="value">${persistenceInfo.uploadsFolder.fileCount} files</span>
-                <b>Backups:</b> <span class="value">${persistenceInfo.backups.count} backups</span>
+                <b>Storage Type:</b> <span class="value">MongoDB Atlas + GridFS</span>
+                <b>Data Persistence:</b> <span class="value">✅ Permanent (survives restarts)</span>
+                <b>Media Storage:</b> <span class="value">✅ GridFS (database)</span>
             </div>
             <div class="kv">
                 <b>Live Data Counts:</b>
@@ -3569,12 +3561,6 @@ async function renderAdminDebug() {
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px;">
                 <button class="btn" onclick="checkBackendStatus().then(s => alert('Status: ' + JSON.stringify(s, null, 2)))">📊 Refresh Status</button>
                 <button class="btn" onclick="checkDataIntegrity().then(i => alert('Integrity: ' + JSON.stringify(i, null, 2)))">🔍 Check Integrity</button>
-                <button class="btn" onclick="exportData()">📤 Export Data</button>
-                <button class="btn" onclick="importData()">📥 Import Data</button>
-            </div>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn" onclick="localStorage.clear(); alert('Local storage cleared')">🗑️ Clear Local Storage</button>
-                <button class="btn" onclick="location.reload()">🔄 Reload Page</button>
             </div>
         </div>
     `;
