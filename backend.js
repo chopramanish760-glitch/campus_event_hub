@@ -452,7 +452,31 @@ app.get('/api/admin/users', async (req, res) => { const data = await loadData();
 app.get('/api/admin/organizers', async (req, res) => { const data = await loadData(); const orgs = data.users.filter(u => u.role === 'ORGANIZER'); res.json({ ok: true, users: orgs }); });
 // Admin: pending organizer requests
 app.get('/api/admin/organizers/pending', async (req,res)=>{ const data=await loadData(); const list=(data.users||[]).filter(u=>u.organizerStatus==='PENDING'); res.json({ ok:true, users:list }); });
-app.post('/api/admin/organizers/verify', (req,res)=>{ const data=loadData(); const { regNumber, decision, reason } = req.body; const u=data.users.find(x=>x.regNumber===regNumber); if(!u) return res.status(404).json({ ok:false, error:'User not found' }); if(u.organizerStatus!=='PENDING') return res.status(400).json({ ok:false, error:'No pending request' }); if(decision==='approve'){ u.organizerStatus='APPROVED'; u.role='ORGANIZER'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:"✅ Your organizer request has been approved. Organizer dashboard unlocked.", time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'approved' }); } else if(decision==='reject'){ u.organizerStatus='REJECTED'; if(!data.notifications) data.notifications={}; if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; data.notifications[regNumber].unshift({ msg:`❌ Your organizer request was rejected.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false }); saveData(data); return res.json({ ok:true, status:'rejected' }); } else { return res.status(400).json({ ok:false, error:'Invalid decision' }); } });
+app.post('/api/admin/organizers/verify', async (req,res)=>{ 
+  const data=await loadData(); 
+  const { regNumber, decision, reason } = req.body; 
+  const u=data.users.find(x=>x.regNumber===regNumber); 
+  if(!u) return res.status(404).json({ ok:false, error:'User not found' }); 
+  if(u.organizerStatus!=='PENDING') return res.status(400).json({ ok:false, error:'No pending request' }); 
+  if(decision==='approve'){ 
+    u.organizerStatus='APPROVED'; 
+    u.role='ORGANIZER'; 
+    if(!data.notifications) data.notifications={}; 
+    if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; 
+    data.notifications[regNumber].unshift({ msg:"✅ Your organizer request has been approved. Organizer dashboard unlocked.", time:new Date().toISOString(), read:false }); 
+    await saveData(data); 
+    return res.json({ ok:true, status:'approved' }); 
+  } else if(decision==='reject'){ 
+    u.organizerStatus='REJECTED'; 
+    if(!data.notifications) data.notifications={}; 
+    if(!data.notifications[regNumber]) data.notifications[regNumber]=[]; 
+    data.notifications[regNumber].unshift({ msg:`❌ Your organizer request was rejected.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false }); 
+    await saveData(data); 
+    return res.json({ ok:true, status:'rejected' }); 
+  } else { 
+    return res.status(400).json({ ok:false, error:'Invalid decision' }); 
+  } 
+});
 // Admin remove organizer ownership -> set role to STUDENT
 app.post('/api/admin/organizers/remove', (req, res) => {
   const data = loadData();
@@ -499,25 +523,49 @@ app.post('/api/admin/users/delete', (req, res) => {
 // Admin events list
 app.get('/api/admin/events', async (req, res) => { const data = await loadData(); res.json({ ok:true, events: data.events }); });
 // Admin delete event with reason
-app.post('/api/admin/events/delete', (req,res)=>{ const data = loadData(); const { eventId, reason } = req.body; const i = data.events.findIndex(e=>e.id===Number(eventId)); if(i===-1) return res.status(404).json({ ok:false, error:'Event not found' }); const ev = data.events[i]; // delete media files
+app.post('/api/admin/events/delete', async (req,res)=>{ 
+  const data = await loadData(); 
+  const { eventId, reason } = req.body; 
+  const i = data.events.findIndex(e=>e.id===Number(eventId)); 
+  if(i===-1) return res.status(404).json({ ok:false, error:'Event not found' }); 
+  const ev = data.events[i]; 
+  // delete media files
   const mediaToDelete = data.media.filter(m=>m.eventId===ev.id);
   mediaToDelete.forEach(m=>{ try{ const fp = path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{} });
   data.media = data.media.filter(m=>m.eventId!==ev.id);
   // notify organizer
   if(!data.notifications) data.notifications={}; if(!data.notifications[ev.creatorRegNumber]) data.notifications[ev.creatorRegNumber]=[];
   data.notifications[ev.creatorRegNumber].unshift({ msg:`❌ Your event '${ev.title}' was deleted by admin.${reason? ' Reason: '+reason:''}`, time:new Date().toISOString(), read:false });
-  data.events.splice(i,1); saveData(data); res.json({ ok:true }); });
+  data.events.splice(i,1); 
+  await saveData(data); 
+  res.json({ ok:true }); 
+});
 // Admin media list per event
 app.get('/api/admin/media/:eventId', async (req,res)=>{ const data=await loadData(); const id=Number(req.params.eventId); res.json({ ok:true, media: data.media.filter(m=>m.eventId===id) }); });
 // Admin delete media item
-app.post('/api/admin/media/delete', (req,res)=>{ const data=loadData(); const { mediaId } = req.body; const i = data.media.findIndex(m=>m.id===Number(mediaId)); if(i===-1) return res.status(404).json({ ok:false, error:'Media not found' }); const m = data.media[i]; const ev = data.events.find(e=>e.id===m.eventId);
+app.post('/api/admin/media/delete', async (req,res)=>{ 
+  const data=await loadData(); 
+  const { mediaId } = req.body; 
+  const i = data.media.findIndex(m=>m.id===Number(mediaId)); 
+  if(i===-1) return res.status(404).json({ ok:false, error:'Media not found' }); 
+  const m = data.media[i]; 
+  const ev = data.events.find(e=>e.id===m.eventId);
   try{ const fp=path.join(__dirname, m.url); if(fs.existsSync(fp)) fs.unlinkSync(fp);}catch{};
   data.media.splice(i,1);
   if(ev){ if(!data.notifications) data.notifications={}; if(!data.notifications[ev.creatorRegNumber]) data.notifications[ev.creatorRegNumber]=[]; data.notifications[ev.creatorRegNumber].unshift({ msg:`🗑️ Admin deleted a media item from '${ev.title}'.`, time:new Date().toISOString(), read:false }); }
-  saveData(data); res.json({ ok:true }); });
+  await saveData(data); 
+  res.json({ ok:true }); 
+});
 
 // Admin change credentials
-app.post('/api/admin/credentials', (req,res)=>{ const data=loadData(); const { username, password } = req.body; if(!username || !password){ return res.status(400).json({ ok:false, error:'Missing fields' }); } data.admin = { username, password }; saveData(data); res.json({ ok:true }); });
+app.post('/api/admin/credentials', async (req,res)=>{ 
+  const data=await loadData(); 
+  const { username, password } = req.body; 
+  if(!username || !password){ return res.status(400).json({ ok:false, error:'Missing fields' }); } 
+  data.admin = { username, password }; 
+  await saveData(data); 
+  res.json({ ok:true }); 
+});
 
 // Admin stats & active users
 app.get('/api/admin/stats', async (req,res)=>{ const data=await loadData(); const totalUsers=(data.users||[]).length; const totalEvents=(data.events||[]).length; const totalOrganizers=(data.users||[]).filter(u=>u.role==='ORGANIZER').length; const activeCut=Date.now()-5*60*1000; const activeUsers=(data.users||[]).filter(u=>u.lastSeen && (new Date(u.lastSeen).getTime()>activeCut)).length; res.json({ ok:true, totalUsers, totalEvents, totalOrganizers, activeUsers }); });
@@ -1574,8 +1622,8 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
 
 // ---------- Delete Account (User self-service) ----------
 // Body: { regNumber, password }
-app.post('/api/account/delete', (req, res) => {
-  const data = loadData();
+app.post('/api/account/delete', async (req, res) => {
+  const data = await loadData();
   const { regNumber, password } = req.body;
   if (!regNumber || !password) return res.status(400).json({ ok: false, error: 'Missing fields.' });
   const userIndex = data.users.findIndex(u => u.regNumber === regNumber && u.password === password);
@@ -1625,6 +1673,6 @@ app.post('/api/account/delete', (req, res) => {
   // 5) Finally remove the user record
   data.users.splice(userIndex, 1);
 
-  saveData(data);
+  await saveData(data);
   return res.json({ ok: true });
 });
