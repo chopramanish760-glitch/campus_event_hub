@@ -170,6 +170,13 @@ async function initializeApp() {
   console.log("🚀 Initializing Campus Event Hub...");
   console.log("=" .repeat(50));
   
+  // Enhanced startup logging
+  console.log('🚀 Campus Event Hub Backend Starting...');
+  console.log(`📁 Data file: ${PERSISTENT_DATA_FILE}`);
+  console.log(`📁 Upload dir: ${PERSISTENT_UPLOAD_DIR}`);
+  console.log(`📁 Backup dir: ${PERSISTENT_BACKUP_DIR}`);
+  console.log(`🔧 Admin: ${DEFAULT_ADMIN.username}`);
+  
   // Check deployment type first
   const isManual = isManualDeployment();
   console.log(`📋 Deployment Type: ${isManual ? 'MANUAL DEPLOYMENT' : 'AUTOMATIC RESTART'}`);
@@ -1422,13 +1429,6 @@ app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR, {
   lastModified: true
 }));
 const PORT = process.env.PORT || 5000;
-// Enhanced startup logging with data verification
-console.log('🚀 Campus Event Hub Backend Starting...');
-console.log(`📁 Data file: ${PERSISTENT_DATA_FILE}`);
-console.log(`📁 Upload dir: ${PERSISTENT_UPLOAD_DIR}`);
-console.log(`📁 Backup dir: ${PERSISTENT_BACKUP_DIR}`);
-console.log(`🔧 Admin: ${DEFAULT_ADMIN.username}`);
-
 app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
 
 // ---------- Messages (Chat) ----------
