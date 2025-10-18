@@ -534,8 +534,8 @@ app.post('/api/admin/clear-all', (req,res)=>{
   res.json({ ok:true });
 });
 
-app.post("/api/events", (req, res) => {
-  const data = loadData();
+app.post("/api/events", async (req, res) => {
+  const data = await loadData();
   const { title, date, time, venue, capacity, duration, category, creatorRegNumber, volunteers, resources } = req.body;
   if (!title || !date || !time || !venue || !capacity || !duration || !category) { return res.status(400).json({ ok: false, error: "All fields are required to create an event." }); }
   const eventDateTime = new Date(`${date}T${time}`);
@@ -580,7 +580,7 @@ app.post("/api/events", (req, res) => {
   saveData(data);
   
   // Update organizer's last seen
-  updateUserLastSeen(creatorRegNumber);
+  await updateUserLastSeen(creatorRegNumber);
   
   try { broadcast('events_changed', { reason: 'created', eventId: newEvent.id }); } catch {}
   res.json({ ok: true, event: newEvent });
@@ -696,8 +696,8 @@ app.delete("/api/events/:id", (req, res) => {
   res.json({ ok: true, message: "Event and associated media deleted successfully" });
 });
 
-app.get("/api/events", (req, res) => {
-  const data = loadData(); let dataWasModified = false;
+app.get("/api/events", async (req, res) => {
+  const data = await loadData(); let dataWasModified = false;
   const now = new Date();
   
   data.events.forEach(event => {
@@ -748,8 +748,8 @@ app.get("/api/events", (req, res) => {
   res.json({ ok: true, events: augmentedEvents });
 });
 
-app.post("/api/tickets", (req, res) => {
-  const data = loadData(); const { eventId, regNumber, via } = req.body;
+app.post("/api/tickets", async (req, res) => {
+  const data = await loadData(); const { eventId, regNumber, via } = req.body;
   const event = data.events.find(e => e.id === eventId); const user = data.users.find(u => u.regNumber === regNumber);
   if (!event || !user) return res.status(404).json({ ok: false, error: "Event or user not found" });
   if (event.creatorRegNumber === regNumber) { return res.status(400).json({ ok: false, error: "You cannot book a ticket for your own event." }); }
@@ -773,7 +773,7 @@ app.post("/api/tickets", (req, res) => {
   saveData(data);
   
   // Update user's last seen
-  updateUserLastSeen(regNumber);
+  await updateUserLastSeen(regNumber);
   
   try {
     broadcast('events_changed', { reason: 'ticket_booked', eventId: event.id });
@@ -781,8 +781,8 @@ app.post("/api/tickets", (req, res) => {
   } catch {}
   res.json({ ok: true, booking });
 });
-app.delete("/api/tickets", (req, res) => {
-  const data = loadData(); const { eventId, regNumber } = req.body;
+app.delete("/api/tickets", async (req, res) => {
+  const data = await loadData(); const { eventId, regNumber } = req.body;
   const event = data.events.find(e => e.id === eventId);
   if (!event) return res.status(404).json({ ok: false, error: "Event not found" });
   const eventStartTime = new Date(`${event.date}T${event.time}`);
@@ -960,8 +960,8 @@ app.get('/api/volunteers/:eventId', (req, res) => {
 });
 
 // Add a volunteer (organizer only)
-app.post('/api/volunteers/add', (req, res) => {
-  const data = loadData();
+app.post('/api/volunteers/add', async (req, res) => {
+  const data = await loadData();
   const { eventId, organizerReg, regNumber, role } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
@@ -1004,8 +1004,8 @@ app.post('/api/volunteers/add', (req, res) => {
 });
 
 // Remove a volunteer (organizer only)
-app.post('/api/volunteers/remove', (req, res) => {
-  const data = loadData();
+app.post('/api/volunteers/remove', async (req, res) => {
+  const data = await loadData();
   const { eventId, organizerReg, regNumber } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
@@ -1033,8 +1033,8 @@ app.post('/api/volunteers/remove', (req, res) => {
 });
 
 // User responds to a volunteer request (accept/reject)
-app.post('/api/volunteers/respond', (req, res) => {
-  const data = loadData();
+app.post('/api/volunteers/respond', async (req, res) => {
+  const data = await loadData();
   const { eventId, regNumber, decision } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
@@ -1104,8 +1104,8 @@ app.post('/api/volunteers/respond', (req, res) => {
 });
 
 // User leaves volunteer role themselves
-app.post('/api/volunteers/leave', (req, res) => {
-  const data = loadData();
+app.post('/api/volunteers/leave', async (req, res) => {
+  const data = await loadData();
   const { eventId, regNumber } = req.body;
   const event = data.events.find(e => e.id === Number(eventId));
   if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
@@ -1443,8 +1443,8 @@ const PORT = process.env.PORT || 5000;
 
 // ---------- Messages (Chat) ----------
 // Send a message related to an event between a student and the organizer
-app.post("/api/messages", (req, res) => {
-  const data = loadData();
+app.post("/api/messages", async (req, res) => {
+  const data = await loadData();
   const { eventId, fromReg, toReg, text } = req.body;
   if (!eventId || !fromReg || !toReg || !text || !String(text).trim()) {
     return res.status(400).json({ ok: false, error: "Missing required fields." });
