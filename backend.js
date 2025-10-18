@@ -23,9 +23,58 @@ app.get("/", (req, res) => {
 });
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
-const DATA_FILE = path.join(__dirname, "data.json");
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-const BACKUP_DIR = path.join(__dirname, "backups");
+// Use persistent storage paths that survive Render.com restarts
+const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, "data.json");
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "uploads");
+const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, "backups");
+
+// For Render.com, use persistent volume if available
+// Render.com provides persistent disk storage at /opt/render/project/
+const PERSISTENT_DATA_FILE = process.env.RENDER ? "/opt/render/project/data.json" : DATA_FILE;
+const PERSISTENT_UPLOAD_DIR = process.env.RENDER ? "/opt/render/project/uploads" : UPLOAD_DIR;
+const PERSISTENT_BACKUP_DIR = process.env.RENDER ? "/opt/render/project/backups" : BACKUP_DIR;
+
+// Log environment detection
+console.log(`🌍 Environment: ${process.env.RENDER ? 'Render.com (PERSISTENT STORAGE)' : 'Local Development'}`);
+console.log(`💾 Using persistent storage: ${process.env.RENDER ? 'YES' : 'NO'}`);
+
+// Data migration function - copy from old location to persistent location
+function migrateToPersistentStorage() {
+  if (!process.env.RENDER) return; // Only run on Render.com
+  
+  try {
+    // Migrate data.json if it exists in old location but not in persistent location
+    if (fs.existsSync(DATA_FILE) && !fs.existsSync(PERSISTENT_DATA_FILE)) {
+      console.log('🔄 Migrating data.json to persistent storage...');
+      fs.copyFileSync(DATA_FILE, PERSISTENT_DATA_FILE);
+      console.log('✅ Data.json migrated successfully');
+    }
+    
+    // Migrate uploads directory
+    if (fs.existsSync(UPLOAD_DIR) && !fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+      console.log('🔄 Migrating uploads to persistent storage...');
+      fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+      const files = fs.readdirSync(UPLOAD_DIR);
+      for (const file of files) {
+        fs.copyFileSync(path.join(UPLOAD_DIR, file), path.join(PERSISTENT_UPLOAD_DIR, file));
+      }
+      console.log(`✅ Migrated ${files.length} upload files`);
+    }
+    
+    // Migrate backups directory
+    if (fs.existsSync(BACKUP_DIR) && !fs.existsSync(PERSISTENT_BACKUP_DIR)) {
+      console.log('🔄 Migrating backups to persistent storage...');
+      fs.mkdirSync(PERSISTENT_BACKUP_DIR, { recursive: true });
+      const files = fs.readdirSync(BACKUP_DIR);
+      for (const file of files) {
+        fs.copyFileSync(path.join(BACKUP_DIR, file), path.join(PERSISTENT_BACKUP_DIR, file));
+      }
+      console.log(`✅ Migrated ${files.length} backup files`);
+    }
+  } catch (err) {
+    console.error('❌ Migration failed:', err);
+  }
+}
 // Default admin can be overridden via env for cloud deployments
 const DEFAULT_ADMIN = {
   username: process.env.ADMIN_USER || "Chopraa03",
@@ -34,27 +83,47 @@ const DEFAULT_ADMIN = {
 // Ensure data.json exists on first boot (useful on stateless hosts)
 function ensureDataFile() {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
+    // Create persistent directories if they don't exist
+    [PERSISTENT_UPLOAD_DIR, PERSISTENT_BACKUP_DIR].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`📁 Created persistent directory: ${dir}`);
+      }
+    });
+
+    // Use persistent data file
+    const dataFile = PERSISTENT_DATA_FILE;
+    
+    if (!fs.existsSync(dataFile)) {
       const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
-      fs.writeFileSync(DATA_FILE, JSON.stringify(base, null, 2));
+      fs.writeFileSync(dataFile, JSON.stringify(base, null, 2));
+      console.log(`📄 Created persistent data file: ${dataFile}`);
     } else {
       // If present but missing or different admin, set to default for operability
       try {
-        const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+        const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
         if (!parsed.admin || parsed.admin.username !== DEFAULT_ADMIN.username || parsed.admin.password !== DEFAULT_ADMIN.password) {
           parsed.admin = DEFAULT_ADMIN;
-          fs.writeFileSync(DATA_FILE, JSON.stringify(parsed, null, 2));
+          fs.writeFileSync(dataFile, JSON.stringify(parsed, null, 2));
+          console.log(`🔧 Updated admin credentials in persistent data file`);
         }
       } catch {
         const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
-        fs.writeFileSync(DATA_FILE, JSON.stringify(base, null, 2));
+        fs.writeFileSync(dataFile, JSON.stringify(base, null, 2));
+        console.log(`🔄 Recreated corrupted persistent data file`);
       }
     }
-  } catch {}
+  } catch (err) {
+    console.error("Failed to ensure persistent data file:", err);
+  }
 }
+// Run migration first (only on Render.com)
+migrateToPersistentStorage();
+
 ensureDataFile();
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
+// Ensure persistent directories exist
+if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(PERSISTENT_BACKUP_DIR)) fs.mkdirSync(PERSISTENT_BACKUP_DIR, { recursive: true });
 
 // Auto-backup system - saves data every 5 minutes
 setInterval(() => {
@@ -85,17 +154,18 @@ function updateUserLastSeen(regNumber) {
 
 function loadData() {
   const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
-  if (!fs.existsSync(DATA_FILE)) return base;
+  const dataFile = PERSISTENT_DATA_FILE;
+  if (!fs.existsSync(dataFile)) return base;
   try {
-    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, "utf-8"));
+    const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
     return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
   } catch {
     // Attempt restore from latest backup
     try {
-      const backups = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
+      const backups = fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
       for (const f of backups) {
         try {
-          const parsed = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf-8'));
+          const parsed = JSON.parse(fs.readFileSync(path.join(PERSISTENT_BACKUP_DIR, f), 'utf-8'));
           return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
         } catch {}
       }
@@ -106,7 +176,8 @@ function loadData() {
 // Enhanced data persistence with multiple safeguards
 function saveData(data) {
   try {
-    console.log(`💾 Saving data to ${DATA_FILE}...`);
+    const dataFile = PERSISTENT_DATA_FILE;
+    console.log(`💾 Saving data to PERSISTENT STORAGE: ${dataFile}...`);
     
     // Validate data before saving
     if (!data || typeof data !== 'object') {
@@ -124,24 +195,24 @@ function saveData(data) {
     };
     
     // Create rotating backup before writing
-    if (fs.existsSync(DATA_FILE)) {
+    if (fs.existsSync(dataFile)) {
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupName = `data-${stamp}.json`;
-      const backupPath = path.join(BACKUP_DIR, backupName);
-      fs.copyFileSync(DATA_FILE, backupPath);
+      const backupPath = path.join(PERSISTENT_BACKUP_DIR, backupName);
+      fs.copyFileSync(dataFile, backupPath);
       console.log(`📦 Backup created: ${backupName}`);
       
       // Also create a "latest" backup for quick recovery
-      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
-      fs.copyFileSync(DATA_FILE, latestBackup);
+      const latestBackup = path.join(PERSISTENT_BACKUP_DIR, 'data-latest.json');
+      fs.copyFileSync(dataFile, latestBackup);
       
       // rotate to last 20 backups (increased from 10)
       try {
-        const list = fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json') && f !== 'data-latest.json').sort();
+        const list = fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json') && f !== 'data-latest.json').sort();
         const toDelete = list.length - 20;
         if (toDelete > 0) {
           for (let i = 0; i < toDelete; i++) {
-            try { fs.unlinkSync(path.join(BACKUP_DIR, list[i])); } catch {}
+            try { fs.unlinkSync(path.join(PERSISTENT_BACKUP_DIR, list[i])); } catch {}
           }
           console.log(`🗑️ Cleaned up ${toDelete} old backups`);
         }
@@ -149,7 +220,7 @@ function saveData(data) {
     }
     
     // Atomic write via temp file then rename
-    const tmp = DATA_FILE + '.tmp';
+    const tmp = dataFile + '.tmp';
     const jsonString = JSON.stringify(validatedData, null, 2);
     fs.writeFileSync(tmp, jsonString);
     
@@ -160,19 +231,19 @@ function saveData(data) {
       throw new Error('Written file is not valid JSON');
     }
     
-    fs.renameSync(tmp, DATA_FILE);
+    fs.renameSync(tmp, dataFile);
     
     // Verify the final file
     try {
-      const finalData = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+      const finalData = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
       // Enhanced logging with file verification
-      const fileStats = fs.statSync(DATA_FILE);
-      console.log(`💾 Data saved to LIVE BACKEND: ${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media`);
-      console.log(`📁 File: ${DATA_FILE} (${fileStats.size} bytes, modified: ${fileStats.mtime.toISOString()})`);
+      const fileStats = fs.statSync(dataFile);
+      console.log(`💾 Data saved to PERSISTENT STORAGE: ${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media`);
+      console.log(`📁 File: ${dataFile} (${fileStats.size} bytes, modified: ${fileStats.mtime.toISOString()})`);
       
       // Update latest backup after successful save
-      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
-      fs.copyFileSync(DATA_FILE, latestBackup);
+      const latestBackup = path.join(PERSISTENT_BACKUP_DIR, 'data-latest.json');
+      fs.copyFileSync(dataFile, latestBackup);
       
     } catch (err) {
       console.error('❌ Final verification failed:', err);
@@ -184,10 +255,10 @@ function saveData(data) {
     
     // Try to restore from latest backup
     try {
-      const latestBackup = path.join(BACKUP_DIR, 'data-latest.json');
+      const latestBackup = path.join(PERSISTENT_BACKUP_DIR, 'data-latest.json');
       if (fs.existsSync(latestBackup)) {
         console.log('🔄 Attempting to restore from latest backup...');
-        fs.copyFileSync(latestBackup, DATA_FILE);
+        fs.copyFileSync(latestBackup, dataFile);
         console.log('✅ Restored from backup');
       }
     } catch (restoreErr) {
@@ -196,7 +267,7 @@ function saveData(data) {
     
     // Fallback best-effort
     try { 
-      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2)); 
+      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));  
       console.log('⚠️ Used fallback save method');
     } catch (fallbackErr) {
       console.error('❌ Fallback save also failed:', fallbackErr);
@@ -1021,8 +1092,8 @@ app.post('/api/data/import', (req, res) => {
 app.get('/api/data/status', (req, res) => {
   try {
     const data = loadData();
-    const fileStats = fs.existsSync(DATA_FILE) ? fs.statSync(DATA_FILE) : null;
-    const backupCount = fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
+    const fileStats = fs.existsSync(PERSISTENT_DATA_FILE) ? fs.statSync(PERSISTENT_DATA_FILE) : null;
+    const backupCount = fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
     
     res.json({
       ok: true,
@@ -1032,7 +1103,7 @@ app.get('/api/data/status', (req, res) => {
         media: data.media?.length || 0,
         messages: data.messages?.length || 0,
         notifications: Object.keys(data.notifications || {}).length,
-        dataFileExists: fs.existsSync(DATA_FILE),
+        dataFileExists: fs.existsSync(PERSISTENT_DATA_FILE),
         lastModified: fileStats ? fileStats.mtime.toISOString() : null,
         backupCount: backupCount
       }
@@ -1091,29 +1162,29 @@ app.get('/api/data/integrity', (req, res) => {
 app.get('/api/data/persistence', (req, res) => {
   try {
     const data = loadData();
-    const fileStats = fs.statSync(DATA_FILE);
-    const uploadStats = fs.existsSync(UPLOAD_DIR) ? fs.readdirSync(UPLOAD_DIR).length : 0;
-    const backupCount = fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
+    const fileStats = fs.statSync(PERSISTENT_DATA_FILE);
+    const uploadStats = fs.existsSync(PERSISTENT_UPLOAD_DIR) ? fs.readdirSync(PERSISTENT_UPLOAD_DIR).length : 0;
+    const backupCount = fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0;
     
     res.json({
       ok: true,
       persistence: {
         dataFile: {
-          exists: fs.existsSync(DATA_FILE),
-          path: DATA_FILE,
+          exists: fs.existsSync(PERSISTENT_DATA_FILE),
+          path: PERSISTENT_DATA_FILE,
           size: fileStats.size,
           lastModified: fileStats.mtime.toISOString(),
           readable: true
         },
         uploadsFolder: {
-          exists: fs.existsSync(UPLOAD_DIR),
-          path: UPLOAD_DIR,
+          exists: fs.existsSync(PERSISTENT_UPLOAD_DIR),
+          path: PERSISTENT_UPLOAD_DIR,
           fileCount: uploadStats
         },
         backups: {
           count: backupCount,
-          path: BACKUP_DIR,
-          exists: fs.existsSync(BACKUP_DIR)
+          path: PERSISTENT_BACKUP_DIR,
+          exists: fs.existsSync(PERSISTENT_BACKUP_DIR)
         },
         dataCounts: {
           users: data.users?.length || 0,
@@ -1164,8 +1235,8 @@ app.get("/api/waitlist/:eventId", (req, res) => {
 app.get("/api/notifications/:regNumber", (req, res) => { const data = loadData(); const reg = req.params.regNumber; res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
 app.post("/api/notifications/mark-read", (req, res) => { const data = loadData(); const { regNumber } = req.body; if (data.notifications && data.notifications[regNumber]) { data.notifications[regNumber].forEach(n => n.read = true); saveData(data); } res.json({ ok: true }); });
 
-const upload = multer({ dest: UPLOAD_DIR });
-const chatUpload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
+const upload = multer({ dest: PERSISTENT_UPLOAD_DIR });
+const chatUpload = multer({ dest: PERSISTENT_UPLOAD_DIR, limits: { fileSize: 10 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
   if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
   cb(new Error('Only image and video files are allowed'));
 }});
@@ -1251,21 +1322,21 @@ app.put("/api/profile", (req, res) => {
   res.json({ ok: true, message: "Profile updated successfully.", user: data.users[userIndex] });
 });
 
-app.use("/uploads", express.static(UPLOAD_DIR));
+app.use("/uploads", express.static(PERSISTENT_UPLOAD_DIR));
 const PORT = process.env.PORT || 5000;
 // Enhanced startup logging with data verification
 console.log('🚀 Campus Event Hub Backend Starting...');
-console.log(`📁 Data file: ${DATA_FILE}`);
-console.log(`📁 Upload dir: ${UPLOAD_DIR}`);
-console.log(`📁 Backup dir: ${BACKUP_DIR}`);
+console.log(`📁 Data file: ${PERSISTENT_DATA_FILE}`);
+console.log(`📁 Upload dir: ${PERSISTENT_UPLOAD_DIR}`);
+console.log(`📁 Backup dir: ${PERSISTENT_BACKUP_DIR}`);
 console.log(`🔧 Admin: ${DEFAULT_ADMIN.username}`);
 
 // Verify initial data state
 try {
   const initialData = loadData();
   console.log(`📊 Initial data loaded: ${initialData.users?.length || 0} users, ${initialData.events?.length || 0} events, ${initialData.media?.length || 0} media`);
-  console.log(`💾 Data file exists: ${fs.existsSync(DATA_FILE)}`);
-  console.log(`📦 Backup count: ${fs.existsSync(BACKUP_DIR) ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0}`);
+  console.log(`💾 Data file exists: ${fs.existsSync(PERSISTENT_DATA_FILE)}`);
+  console.log(`📦 Backup count: ${fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0}`);
 } catch (err) {
   console.error('❌ Failed to load initial data:', err);
 }
@@ -1457,4 +1528,5 @@ app.post('/api/account/delete', (req, res) => {
 
   saveData(data);
   return res.json({ ok: true });
+});
 });
