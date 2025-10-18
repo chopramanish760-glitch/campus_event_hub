@@ -595,7 +595,9 @@ async function renderEvents() {
         today.setHours(0, 0, 0, 0);
         
         if (currentDateFilter === 'today') {
-            return eventDate.getTime() === today.getTime();
+            const todayStr = today.toISOString().split('T')[0];
+            const eventDateStr = eventDate.toISOString().split('T')[0];
+            return eventDateStr === todayStr;
         } else if (currentDateFilter === 'week') {
             const weekEnd = new Date(today);
             weekEnd.setDate(today.getDate() + 7);
@@ -1508,6 +1510,13 @@ async function renderOrganizer(){
     
     console.log("✅ Organizer dashboard - Events loaded:", data.events.length, "events");
     console.log("🔍 Current user:", currentUser);
+    console.log("🔍 All events:", data.events);
+    
+    if (!currentUser || !currentUser.regNumber) {
+        console.log("❌ No current user found");
+        c.innerHTML += `<p class="muted">Please log in to view your events.</p>`;
+        return;
+    }
     
     const myEvents = data.events.filter(e => e.creatorRegNumber === currentUser.regNumber);
     console.log("🎯 My events:", myEvents.length, "events");
@@ -1517,6 +1526,7 @@ async function renderOrganizer(){
     }
     
     const organizerDate = new Date;
+    const now = new Date;
     const upcomingAndLive = myEvents.filter(e => {
         const endTime = new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000);
         return endTime >= organizerDate;
