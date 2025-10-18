@@ -41,7 +41,7 @@ const PERSISTENT_UPLOAD_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/
 const PERSISTENT_BACKUP_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/backups" : BACKUP_DIR;
 
 // MongoDB Configuration for Permanent Data Storage
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760_db_user:OUBXyVDbvcank2GE@campus.urvjcdt.mongodb.net/campus_event_hub?retryWrites=true&w=majority&appName=campus";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760_db_user:OUBXyVDbvcank2GE@campus.urvjcdt.mongodb.net/campus_event_hub?retryWrites=true&w=majority&appName=campus&ssl=true&authSource=admin";
 const DB_NAME = "campus_event_hub";
 const COLLECTION_NAME = "app_data";
 
@@ -59,7 +59,17 @@ async function initMongoDB() {
     console.log("🔗 Connecting to MongoDB Atlas...");
     console.log(`📋 MongoDB URI: ${MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials in logs
     
-    const client = new MongoClient(MONGODB_URI);
+    const client = new MongoClient(MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      ssl: true,
+      tlsAllowInvalidCertificates: false,
+      tlsAllowInvalidHostnames: false,
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 10000
+    });
+    
     await client.connect();
     db = client.db(DB_NAME);
     collection = db.collection(COLLECTION_NAME);
