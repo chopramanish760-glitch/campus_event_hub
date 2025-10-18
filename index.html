@@ -3724,6 +3724,49 @@ function escapeHtml(s){
 }
 </script>
 <script>
+// Initialize app when page loads
+function initializeApp() {
+    try {
+        console.log("🚀 Initializing Campus Event Hub...");
+        console.log("🔍 API_BASE:", API_BASE);
+        console.log("🔍 API:", API);
+        
+        // Check if user is already logged in
+        const savedUser = loadUserSession();
+        if (savedUser) {
+            console.log("👤 Found saved user session:", savedUser.regNumber);
+            currentUser = savedUser;
+            renderTabs();
+            showTab("home");
+            // Start background processes
+            try { pollNotifications(); } catch {}
+            try { notificationInterval = setInterval(pollNotifications, 5000); } catch {}
+            try { eventStateInterval = setInterval(checkEventStates, 30000); } catch {}
+            try { startLiveUpdates(); } catch {}
+        } else {
+            console.log("🔐 No saved session, showing login");
+            showLogin();
+        }
+    } catch (error) {
+        console.error("❌ App initialization failed:", error);
+        // Fallback to showing login screen
+        try {
+            showLogin();
+        } catch (fallbackError) {
+            console.error("❌ Even fallback failed:", fallbackError);
+            // Last resort - show basic message
+            document.body.innerHTML = '<div style="padding: 20px; text-align: center;"><h2>App Loading Error</h2><p>Please refresh the page or check console for details.</p></div>';
+        }
+    }
+}
+
+// Run initialization when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+    initializeApp();
+}
+
 // Center toast for short messages
 function showCenterToast(text){
     try{
