@@ -151,9 +151,15 @@ const API_BASE = (function(){
   try{
     const configured = (typeof window!=='undefined' && (window.API_BASE || localStorage.getItem('API_BASE')));
     if(configured) return configured;
-    if(typeof window!=='undefined' && window.location && window.location.origin){ return window.location.origin; }
+    if(typeof window!=='undefined' && window.location && window.location.origin){ 
+      // Check if we're on Netlify and use the Render backend
+      if(window.location.hostname.includes('netlify')) {
+        return "https://campus-event-hub-1.onrender.com";
+      }
+      return window.location.origin; 
+    }
   }catch{}
-  return "http://localhost:5000";
+  return "https://campus-event-hub-1.onrender.com"; // Default to Render backend
 })();
 // Force iframe maps to avoid API key issues on production
 const USE_IFRAME_MAPS = false;
@@ -1053,11 +1059,25 @@ function showForgotPassword() {
     showTab('login');
 }
 async function doLogin() {
-    const regNumber = String(document.getElementById("loginReg").value||'').trim(); const password = String(document.getElementById("loginPass").value||'');
-    const msg = document.getElementById("loginMsg"); msg.textContent = "⏳ Logging in...";
+    const regNumber = String(document.getElementById("loginReg").value||'').trim(); 
+    const password = String(document.getElementById("loginPass").value||'');
+    const msg = document.getElementById("loginMsg"); 
+    msg.textContent = "⏳ Logging in...";
+    
+    console.log("🔍 Login attempt:", { regNumber, API_BASE, API });
+    
     try {
-        const res = await fetch(API + "/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regNumber, password }) });
+        const res = await fetch(API + "/login", { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ regNumber, password }) 
+        });
+        
+        console.log("📡 Login response:", res.status, res.statusText);
+        
         const data = await res.json();
+        console.log("📊 Login data:", data);
+        
         if (res.ok && data.ok) {
             msg.textContent = "✅ Login successful! Redirecting...";
             setTimeout(async () => {
@@ -1090,8 +1110,14 @@ async function doLogin() {
                 // Welcome back banner
                 showWelcomeBanner(`👋 Welcome back, ${data.user.name}!`);
             }, 1000);
-        } else { msg.textContent = "❌ " + (data.error || "Login failed"); }
-    } catch { msg.textContent = "❌ Network error"; }
+        } else { 
+            console.error("❌ Login failed:", data);
+            msg.textContent = "❌ " + (data.error || "Login failed"); 
+        }
+    } catch (err) { 
+        console.error("❌ Login network error:", err);
+        msg.textContent = "❌ Network error - check console for details"; 
+    }
 }
 
 // ---------- Live Updates via SSE ----------
@@ -1133,11 +1159,34 @@ function startLiveUpdates(){
     es.onerror = () => { try{ es.close(); }catch{}; __eventSource=null; setTimeout(()=>{ try{ startLiveUpdates(); }catch{} }, 5000); };
 }
 async function doSignup() {
-    const user = { name: capitalizeWords(document.getElementById("name").value), surname: capitalizeWords(document.getElementById("surname").value), age: document.getElementById("age").value, gender: document.getElementById("gender").value, email: String(document.getElementById("email").value||'').trim(), phone: String(document.getElementById("phone").value||'').trim(), regNumber: String(document.getElementById("regNumber").value||'').trim(), password: document.getElementById("password").value, role: document.getElementById("role").value };
-    const msg = document.getElementById("signupMsg"); msg.textContent = "⏳ Signing up...";
+    const user = { 
+        name: capitalizeWords(document.getElementById("name").value), 
+        surname: capitalizeWords(document.getElementById("surname").value), 
+        age: document.getElementById("age").value, 
+        gender: document.getElementById("gender").value, 
+        email: String(document.getElementById("email").value||'').trim(), 
+        phone: String(document.getElementById("phone").value||'').trim(), 
+        regNumber: String(document.getElementById("regNumber").value||'').trim(), 
+        password: document.getElementById("password").value, 
+        role: document.getElementById("role").value 
+    };
+    const msg = document.getElementById("signupMsg"); 
+    msg.textContent = "⏳ Signing up...";
+    
+    console.log("🔍 Signup attempt:", { regNumber: user.regNumber, API_BASE, API });
+    
     try {
-        const res = await fetch(API + "/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(user) });
+        const res = await fetch(API + "/signup", { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify(user) 
+        });
+        
+        console.log("📡 Signup response:", res.status, res.statusText);
+        
         const data = await res.json();
+        console.log("📊 Signup data:", data);
+        
         if (res.ok && data.ok) {
             if(user.role==='ORGANIZER'){
                 // Organizer requests are saved as STUDENT with organizerStatus=PENDING.
@@ -1181,8 +1230,14 @@ async function doSignup() {
                     showLogin();
                 }
             }, 2000);
-        } else { msg.textContent = "❌ " + (data.error || "Signup failed"); }
-    } catch { msg.textContent = "❌ Network error"; }
+        } else { 
+            console.error("❌ Signup failed:", data);
+            msg.textContent = "❌ " + (data.error || "Signup failed"); 
+        }
+    } catch (err) { 
+        console.error("❌ Signup network error:", err);
+        msg.textContent = "❌ Network error - check console for details"; 
+    }
 }
 async function doResetPassword() { const e = document.getElementById("resetReg").value, t = document.getElementById("resetRole").value, n = document.getElementById("newPassword").value, c = document.getElementById("confirmNewPassword").value, a = document.getElementById("resetMsg"); if(n!==c){ a.textContent = "❌ Passwords do not match"; return;} if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(n)) return void (a.textContent = "❌ Password must contain uppercase, lowercase, number and be at least 6 characters long"); a.textContent = "⏳ Resetting password..."; try { const i = await fetch(API + "/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regNumber: e, role: t, newPassword: n }) }), o = await i.json(); i.ok && o.ok ? (a.textContent = "✅ Password changed successfully! Redirecting...", setTimeout(showLogin, 1000)) : a.textContent = "❌ " + (o.error || "Password reset failed.") } catch { a.textContent = "❌ Network error" } }
 function togglePasswordVisibility(e) { const t = document.getElementById(e), n = t.nextElementSibling, a = n.querySelectorAll(".eye-open-path"), i = n.querySelectorAll(".eye-closed-path"); "password" === t.type ? (t.type = "text", a.forEach(e => e.style.display = "none"), i.forEach(e => e.style.display = "block")) : (t.type = "password", a.forEach(e => e.style.display = "block"), i.forEach(e => e.style.display = "none")) }
