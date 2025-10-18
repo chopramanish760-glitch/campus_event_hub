@@ -41,7 +41,7 @@ const PERSISTENT_UPLOAD_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/
 const PERSISTENT_BACKUP_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/backups" : BACKUP_DIR;
 
 // MongoDB Configuration for Permanent Data Storage
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760_db_user:OUBXyVDbvcank2GE@campus.urvjcdt.mongodb.net/campus_event_hub?retryWrites=true&w=majority&appName=campus&ssl=true&authSource=admin";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760_db_user:OUBXyVDbvcank2GE@campus.urvjcdt.mongodb.net/campus_event_hub?retryWrites=true&w=majority&appName=campus&ssl=true&authSource=admin&tls=true";
 const DB_NAME = "campus_event_hub";
 const COLLECTION_NAME = "app_data";
 
@@ -59,29 +59,41 @@ async function initMongoDB() {
     console.log("🔗 Connecting to MongoDB Atlas...");
     console.log(`📋 MongoDB URI: ${MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials in logs
     
+    // Test basic connectivity first
+    console.log("🔍 Testing MongoDB connectivity...");
+    
     const client = new MongoClient(MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      ssl: true,
-      tlsAllowInvalidCertificates: false,
-      tlsAllowInvalidHostnames: false,
-      serverSelectionTimeoutMS: 10000,
-      connectTimeoutMS: 10000,
-      socketTimeoutMS: 10000
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
+      socketTimeoutMS: 15000,
+      maxPoolSize: 10,
+      retryWrites: true,
+      retryReads: true,
+      heartbeatFrequencyMS: 10000
     });
     
+    console.log("🔍 Attempting to connect...");
     await client.connect();
+    console.log("✅ MongoDB client connected!");
+    
+    // Test database access
     db = client.db(DB_NAME);
     collection = db.collection(COLLECTION_NAME);
-    console.log("✅ Connected to MongoDB Atlas successfully!");
+    
+    // Test a simple operation
+    console.log("🔍 Testing database operations...");
+    await db.admin().ping();
+    console.log("✅ Database ping successful!");
     
     // Create indexes for better performance
     await collection.createIndex({ "type": 1 });
     console.log("📊 Database indexes created");
     
+    console.log("✅ Connected to MongoDB Atlas successfully!");
     return true;
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err.message);
+    console.error("❌ Error details:", err);
     console.log("🔄 Falling back to local file storage...");
     return false;
   }
