@@ -186,6 +186,16 @@ async function initializeApp() {
   // Initialize MongoDB connection
   const mongoConnected = await initMongoDB();
   
+  // Verify initial data state after MongoDB connection
+  try {
+    const initialData = await loadData();
+    console.log(`📊 Initial data loaded: ${initialData.users?.length || 0} users, ${initialData.events?.length || 0} events, ${initialData.media?.length || 0} media`);
+    console.log(`💾 Data file exists: ${fs.existsSync(PERSISTENT_DATA_FILE)}`);
+    console.log(`📦 Backup count: ${fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0}`);
+  } catch (err) {
+    console.error('❌ Failed to load initial data:', err);
+  }
+  
   if (mongoConnected) {
     console.log("✅ App initialized with MongoDB Atlas (permanent storage)");
     console.log("💾 Data will persist FOREVER across automatic restarts");
@@ -1418,16 +1428,6 @@ console.log(`📁 Data file: ${PERSISTENT_DATA_FILE}`);
 console.log(`📁 Upload dir: ${PERSISTENT_UPLOAD_DIR}`);
 console.log(`📁 Backup dir: ${PERSISTENT_BACKUP_DIR}`);
 console.log(`🔧 Admin: ${DEFAULT_ADMIN.username}`);
-
-// Verify initial data state
-try {
-  const initialData = loadData();
-  console.log(`📊 Initial data loaded: ${initialData.users?.length || 0} users, ${initialData.events?.length || 0} events, ${initialData.media?.length || 0} media`);
-  console.log(`💾 Data file exists: ${fs.existsSync(PERSISTENT_DATA_FILE)}`);
-  console.log(`📦 Backup count: ${fs.existsSync(PERSISTENT_BACKUP_DIR) ? fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).length : 0}`);
-} catch (err) {
-  console.error('❌ Failed to load initial data:', err);
-}
 
 app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
 
