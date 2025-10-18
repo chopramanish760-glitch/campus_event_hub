@@ -1198,7 +1198,7 @@ app.post('/api/data/import', (req, res) => {
     // Always preserve DEFAULT_ADMIN
     const importData = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN, ...payload };
     importData.admin = DEFAULT_ADMIN;
-    saveData(importData);
+    await saveData(importData);
     console.log(`📥 Data imported: ${importData.users?.length || 0} users, ${importData.events?.length || 0} events`);
     return res.json({ ok:true, message: `Imported ${importData.users?.length || 0} users and ${importData.events?.length || 0} events` });
   }catch(err){ 
@@ -1386,7 +1386,6 @@ app.get("/api/waitlist/:eventId", async (req, res) => {
   res.json({ ok: true, waitlist: list });
 });
 
-app.get("/api/notifications/:regNumber", async (req, res) => { const data = await loadData(); const reg = req.params.regNumber; res.json({ ok: true, notifications: (data.notifications && data.notifications[reg]) || [] }); });
 app.post("/api/notifications/mark-read", async (req, res) => { const data = await loadData(); const { regNumber } = req.body; if (data.notifications && data.notifications[regNumber]) { data.notifications[regNumber].forEach(n => n.read = true); await saveData(data); } res.json({ ok: true }); });
 
 // Configure multer for memory storage (GridFS will handle file storage)
