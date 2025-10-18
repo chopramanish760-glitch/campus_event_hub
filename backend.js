@@ -73,13 +73,32 @@ async function initMongoDB() {
 // Check if this is a manual deployment (not automatic restart)
 function isManualDeployment() {
   // Check for deployment-specific environment variables
-  return process.env.RENDER_DEPLOY_ID || process.env.GIT_COMMIT_SHA || false;
+  const deployId = process.env.RENDER_DEPLOY_ID;
+  const gitCommit = process.env.GIT_COMMIT_SHA;
+  const renderService = process.env.RENDER;
+  
+  // If we have deployment info, it's likely a manual deployment
+  if (deployId || gitCommit) {
+    console.log(`🔍 Manual deployment detected: DeployID=${deployId}, GitCommit=${gitCommit}`);
+    return true;
+  }
+  
+  // Check if this is the first startup after a deployment
+  // (Render sets these on manual deployments)
+  if (renderService && (process.env.RENDER_DEPLOY_HOOK || process.env.RENDER_GIT_COMMIT)) {
+    console.log(`🔍 Manual deployment detected via Render environment`);
+    return true;
+  }
+  
+  console.log(`🔍 Automatic restart detected (no deployment markers)`);
+  return false;
 }
 
-// Clear uploads directory on manual deployment
-function clearUploadsOnDeploy() {
+// Clear both uploads and data on manual deployment
+function clearDataOnDeploy() {
   if (isManualDeployment()) {
     try {
+      // Clear uploads directory
       if (fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
         const files = fs.readdirSync(PERSISTENT_UPLOAD_DIR);
         files.forEach(file => {
@@ -90,8 +109,19 @@ function clearUploadsOnDeploy() {
         });
         console.log(`🗑️ Cleared ${files.length} files from uploads directory (manual deployment detected)`);
       }
+      
+      // Clear data from MongoDB
+      if (collection) {
+        collection.deleteOne({ type: "app_data" }).then(() => {
+          console.log(`🗑️ Cleared all data from MongoDB (manual deployment detected)`);
+        }).catch(err => {
+          console.error("❌ Failed to clear MongoDB data:", err);
+        });
+      }
+      
+      console.log("🔄 Fresh start: All data and uploads cleared for manual deployment");
     } catch (err) {
-      console.error("❌ Failed to clear uploads:", err);
+      console.error("❌ Failed to clear data on deployment:", err);
     }
   }
 }
@@ -119,9 +149,14 @@ function ensureDataFile() {
 // Initialize the application
 async function initializeApp() {
   console.log("🚀 Initializing Campus Event Hub...");
+  console.log("=" .repeat(50));
   
-  // Clear uploads on manual deployment
-  clearUploadsOnDeploy();
+  // Check deployment type first
+  const isManual = isManualDeployment();
+  console.log(`📋 Deployment Type: ${isManual ? 'MANUAL DEPLOYMENT' : 'AUTOMATIC RESTART'}`);
+  
+  // Clear both data and uploads on manual deployment
+  clearDataOnDeploy();
   
   // Ensure uploads directory exists
   if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
@@ -134,10 +169,17 @@ async function initializeApp() {
   
   if (mongoConnected) {
     console.log("✅ App initialized with MongoDB Atlas (permanent storage)");
+    console.log("💾 Data will persist FOREVER across automatic restarts");
+    if (isManual) {
+      console.log("🔄 Fresh start: All data cleared for manual deployment");
+    } else {
+      console.log("📊 Existing data preserved (automatic restart)");
+    }
   } else {
     console.log("⚠️ App initialized with local storage (temporary)");
   }
   
+  console.log("=" .repeat(50));
   console.log("🎯 Ready to serve requests!");
 }
 
