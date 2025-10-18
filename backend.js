@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const multer = require("multer");
 const path = require("path");
+const { MongoClient } = require("mongodb");
 const cors = require("cors");
 
 const app = express();
@@ -39,8 +40,61 @@ const PERSISTENT_DATA_FILE = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/p
 const PERSISTENT_UPLOAD_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/uploads" : UPLOAD_DIR;
 const PERSISTENT_BACKUP_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/backups" : BACKUP_DIR;
 
-// Simplified storage - no external dependencies
-console.log(`💾 Using local storage only`);
+// MongoDB Configuration for Permanent Data Storage
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760:Manish@2000@cluster0.mongodb.net/campus_event_hub?retryWrites=true&w=majority";
+const DB_NAME = "campus_event_hub";
+const COLLECTION_NAME = "app_data";
+
+let db = null;
+let collection = null;
+
+// Initialize MongoDB connection
+async function initMongoDB() {
+  try {
+    console.log("🔗 Connecting to MongoDB Atlas...");
+    const client = new MongoClient(MONGODB_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    collection = db.collection(COLLECTION_NAME);
+    console.log("✅ Connected to MongoDB Atlas successfully!");
+    
+    // Create indexes for better performance
+    await collection.createIndex({ "type": 1 });
+    console.log("📊 Database indexes created");
+    
+    return true;
+  } catch (err) {
+    console.error("❌ MongoDB connection failed:", err.message);
+    console.log("🔄 Falling back to local file storage...");
+    return false;
+  }
+}
+
+// Check if this is a manual deployment (not automatic restart)
+function isManualDeployment() {
+  // Check for deployment-specific environment variables
+  return process.env.RENDER_DEPLOY_ID || process.env.GIT_COMMIT_SHA || false;
+}
+
+// Clear uploads directory on manual deployment
+function clearUploadsOnDeploy() {
+  if (isManualDeployment()) {
+    try {
+      if (fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+        const files = fs.readdirSync(PERSISTENT_UPLOAD_DIR);
+        files.forEach(file => {
+          const filePath = path.join(PERSISTENT_UPLOAD_DIR, file);
+          if (fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+          }
+        });
+        console.log(`🗑️ Cleared ${files.length} files from uploads directory (manual deployment detected)`);
+      }
+    } catch (err) {
+      console.error("❌ Failed to clear uploads:", err);
+    }
+  }
+}
 
 // Default admin can be overridden via env for cloud deployments
 const DEFAULT_ADMIN = {
@@ -62,52 +116,88 @@ function ensureDataFile() {
   }
 }
 
-ensureDataFile();
-// Ensure uploads directory exists
-if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+// Initialize the application
+async function initializeApp() {
+  console.log("🚀 Initializing Campus Event Hub...");
+  
+  // Clear uploads on manual deployment
+  clearUploadsOnDeploy();
+  
+  // Ensure uploads directory exists
+  if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+    fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+    console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
+  }
+  
+  // Initialize MongoDB connection
+  const mongoConnected = await initMongoDB();
+  
+  if (mongoConnected) {
+    console.log("✅ App initialized with MongoDB Atlas (permanent storage)");
+  } else {
+    console.log("⚠️ App initialized with local storage (temporary)");
+  }
+  
+  console.log("🎯 Ready to serve requests!");
+}
+
+// Start the application
+initializeApp().catch(err => {
+  console.error("❌ Failed to initialize app:", err);
+  process.exit(1);
+});
 
 // Helper function to update user last seen
-function updateUserLastSeen(regNumber) {
+async function updateUserLastSeen(regNumber) {
   try {
-    const data = loadData();
+    const data = await loadData();
     const user = data.users.find(u => u.regNumber === regNumber);
     if (user) {
       user.lastSeen = new Date().toISOString();
-      saveData(data);
+      await saveData(data);
     }
   } catch (err) {
     console.error('Failed to update last seen:', err);
   }
 }
 
-function loadData() {
+// Load data from MongoDB (permanent storage)
+async function loadData() {
   const base = { users: [], events: [], media: [], notifications: {}, messages: [], admin: DEFAULT_ADMIN };
   
-  // Try to load from local file first
-  const dataFile = PERSISTENT_DATA_FILE;
-  if (!fs.existsSync(dataFile)) return base;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(dataFile, "utf-8"));
-    return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
-  } catch {
-    // Attempt restore from latest backup
-    try {
-      const backups = fs.readdirSync(PERSISTENT_BACKUP_DIR).filter(f => f.endsWith('.json')).sort().reverse();
-      for (const f of backups) {
-        try {
-          const parsed = JSON.parse(fs.readFileSync(path.join(PERSISTENT_BACKUP_DIR, f), 'utf-8'));
-          return { users: parsed.users || [], events: parsed.events || [], media: parsed.media || [], notifications: parsed.notifications || {}, messages: parsed.messages || [], admin: parsed.admin || DEFAULT_ADMIN };
-        } catch {}
-      }
-    } catch {}
+  if (!collection) {
+    console.log("📄 MongoDB not available, using default data");
     return base;
   }
-}
-function saveData(data) {
+  
   try {
-    const dataFile = PERSISTENT_DATA_FILE;
-    console.log(`💾 Saving data...`);
-    
+    const result = await collection.findOne({ type: "app_data" });
+    if (result && result.data) {
+      console.log(`📊 Loaded from MongoDB: ${result.data.users?.length || 0} users, ${result.data.events?.length || 0} events, ${result.data.media?.length || 0} media`);
+      return {
+        users: result.data.users || [],
+        events: result.data.events || [],
+        media: result.data.media || [],
+        notifications: result.data.notifications || {},
+        messages: result.data.messages || [],
+        admin: result.data.admin || DEFAULT_ADMIN
+      };
+    }
+  } catch (err) {
+    console.error("❌ Failed to load from MongoDB:", err);
+  }
+  
+  return base;
+}
+
+// Save data to MongoDB (permanent storage)
+async function saveData(data) {
+  if (!collection) {
+    console.log("❌ MongoDB not available, cannot save data");
+    return;
+  }
+  
+  try {
     // Validate data before saving
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid data structure');
@@ -123,27 +213,23 @@ function saveData(data) {
       admin: data.admin || DEFAULT_ADMIN
     };
     
-    // Simple atomic write
-    const tmp = dataFile + '.tmp';
-    const jsonString = JSON.stringify(validatedData, null, 2);
-    fs.writeFileSync(tmp, jsonString);
+    // Upsert (update or insert) the data
+    await collection.updateOne(
+      { type: "app_data" },
+      { 
+        $set: { 
+          data: validatedData,
+          lastUpdated: new Date(),
+          version: "1.0"
+        }
+      },
+      { upsert: true }
+    );
     
-    // Verify the written file is valid JSON
-    try {
-      JSON.parse(fs.readFileSync(tmp, 'utf-8'));
-    } catch (err) {
-      fs.unlinkSync(tmp);
-      throw new Error('Written file is not valid JSON');
-    }
-    
-    fs.renameSync(tmp, dataFile);
-    
-    // Log success
-    const finalData = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
-    console.log(`✅ Data saved: ${finalData.users?.length || 0} users, ${finalData.events?.length || 0} events, ${finalData.media?.length || 0} media`);
+    console.log(`✅ Data saved to MongoDB: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
     
   } catch (err) {
-    console.error('❌ Failed to save data:', err);
+    console.error('❌ Failed to save data to MongoDB:', err);
     throw err;
   }
 }
@@ -170,49 +256,58 @@ function broadcast(eventName, data, targetReg) {
   });
 }
 
-app.post("/api/signup", (req, res) => {
-  const data = loadData();
-  const name = String(req.body.name||'');
-  const surname = String(req.body.surname||'');
-  const age = req.body.age;
-  const gender = req.body.gender;
-  const email = String(req.body.email||'').trim();
-  const phone = String(req.body.phone||'').trim();
-  const regNumber = String(req.body.regNumber||'').trim();
-  const password = String(req.body.password||'');
-  const role = req.body.role;
-  if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
-  // Uniqueness validation across all users
-  if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
-  if (data.users.find(u => (u.email||'').toLowerCase() === String(email).toLowerCase())) { return res.status(400).json({ ok: false, error: "Email already in use" }); }
-  if (data.users.find(u => u.phone === phone)) { return res.status(400).json({ ok: false, error: "Phone already in use" }); }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
-  if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
-  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
-  let finalRole = role;
-  let organizerStatus = undefined;
-  if (role === 'ORGANIZER') {
-    // Treat as request; user behaves as student until approved
-    finalRole = 'STUDENT';
-    organizerStatus = 'PENDING';
+app.post("/api/signup", async (req, res) => {
+  try {
+    const data = await loadData();
+    const name = String(req.body.name||'');
+    const surname = String(req.body.surname||'');
+    const age = req.body.age;
+    const gender = req.body.gender;
+    const email = String(req.body.email||'').trim();
+    const phone = String(req.body.phone||'').trim();
+    const regNumber = String(req.body.regNumber||'').trim();
+    const password = String(req.body.password||'');
+    const role = req.body.role;
+    if (!name || !surname || !age || !gender || !email || !phone || !regNumber || !password || !role) { return res.status(400).json({ ok: false, error: "All fields are required" }); }
+    // Uniqueness validation across all users
+    if (data.users.find(u => u.regNumber === regNumber)) { return res.status(400).json({ ok: false, error: "Registration number already exists" }); }
+    if (data.users.find(u => (u.email||'').toLowerCase() === String(email).toLowerCase())) { return res.status(400).json({ ok: false, error: "Email already in use" }); }
+    if (data.users.find(u => u.phone === phone)) { return res.status(400).json({ ok: false, error: "Phone already in use" }); }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ ok: false, error: "Invalid email format" });
+    if (!/^\d{10}$/.test(phone)) return res.status(400).json({ ok: false, error: "Phone must be 10 digits" });
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) { return res.status(400).json({ ok: false, error: "Password must contain uppercase, lowercase, number and be at least 6 characters long" }); }
+    let finalRole = role;
+    let organizerStatus = undefined;
+    if (role === 'ORGANIZER') {
+      // Treat as request; user behaves as student until approved
+      finalRole = 'STUDENT';
+      organizerStatus = 'PENDING';
+    }
+    const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role: finalRole };
+    if (organizerStatus) user.organizerStatus = organizerStatus;
+    data.users.push(user); 
+    await saveData(data);
+    return res.json({ ok: true, user });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
-  const user = { id: Date.now(), name, surname, age, gender, email, phone, regNumber, password, role: finalRole };
-  if (organizerStatus) user.organizerStatus = organizerStatus;
-  data.users.push(user); saveData(data);
-  return res.json({ ok: true, user });
 });
-app.post("/api/login", (req, res) => {
-  const data = loadData();
-  const regNumber = String((req.body.regNumber||'')).trim();
-  const password = String((req.body.password||''));
-  const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
-  if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
-  
-  // Update last seen on login
-  user.lastSeen = new Date().toISOString();
-  saveData(data);
-  
-  res.json({ ok: true, user });
+app.post("/api/login", async (req, res) => {
+  try {
+    const data = await loadData();
+    const regNumber = String((req.body.regNumber||'')).trim();
+    const password = String((req.body.password||''));
+    const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
+    if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
+    
+    // Update last seen on login
+    user.lastSeen = new Date().toISOString();
+    await saveData(data);
+    
+    res.json({ ok: true, user });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 app.post("/api/admin/login", (req, res) => {
   const data = loadData();
