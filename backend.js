@@ -4,7 +4,6 @@ const multer = require("multer");
 const path = require("path");
 const { MongoClient, GridFSBucket, ObjectId } = require("mongodb");
 const cors = require("cors");
-const sharp = require("sharp");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -1428,23 +1427,13 @@ async function processVideo(inputBuffer, filename) {
   return inputBuffer;
 }
 
-// Image compression function
-async function compressImage(inputBuffer) {
-  try {
-    return await sharp(inputBuffer)
-      .resize(1920, 1080, { 
-        fit: 'inside',
-        withoutEnlargement: true 
-      })
-      .jpeg({ 
-        quality: 85,
-        progressive: true 
-      })
-      .toBuffer();
-  } catch (error) {
-    console.error('Image compression failed:', error);
-    return inputBuffer; // Return original if compression fails
-  }
+// Simple image processing function (no external dependencies)
+async function processImage(inputBuffer) {
+  // For now, we'll just return the original buffer
+  // In a production environment, you could integrate with cloud services
+  // like Cloudinary, AWS Image Processing, or similar
+  console.log(`🖼️ Image processing: ${inputBuffer.length} bytes - using original file`);
+  return inputBuffer;
 }
 
 app.post("/api/media", upload.single("file"), async (req, res) => {
@@ -1466,9 +1455,9 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
         processedBuffer = await processVideo(req.file.buffer, req.file.originalname);
         console.log(`✅ Video processed: ${originalSize} → ${processedBuffer.length} bytes`);
       } else if (req.file.mimetype.startsWith('image/')) {
-        console.log(`🖼️ Compressing image: ${req.file.originalname} (${originalSize} bytes)`);
-        processedBuffer = await compressImage(req.file.buffer);
-        console.log(`✅ Image compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+        console.log(`🖼️ Processing image: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await processImage(req.file.buffer);
+        console.log(`✅ Image processed: ${originalSize} → ${processedBuffer.length} bytes`);
       }
     } catch (compressionError) {
       console.error('⚠️ Compression failed, using original file:', compressionError.message);
@@ -1745,9 +1734,9 @@ app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
         processedBuffer = await processVideo(req.file.buffer, req.file.originalname);
         console.log(`✅ Chat video processed: ${originalSize} → ${processedBuffer.length} bytes`);
       } else if (req.file.mimetype.startsWith('image/')) {
-        console.log(`🖼️ Compressing chat image: ${req.file.originalname} (${originalSize} bytes)`);
-        processedBuffer = await compressImage(req.file.buffer);
-        console.log(`✅ Chat image compressed: ${originalSize} → ${processedBuffer.length} bytes (${Math.round((1 - processedBuffer.length/originalSize) * 100)}% reduction)`);
+        console.log(`🖼️ Processing chat image: ${req.file.originalname} (${originalSize} bytes)`);
+        processedBuffer = await processImage(req.file.buffer);
+        console.log(`✅ Chat image processed: ${originalSize} → ${processedBuffer.length} bytes`);
       }
     } catch (compressionError) {
       console.error('⚠️ Chat compression failed, using original file:', compressionError.message);
