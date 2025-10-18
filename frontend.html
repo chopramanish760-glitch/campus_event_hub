@@ -2841,12 +2841,12 @@ function adminLogout(){
   try{ showLogin(); }catch{}
 }
 async function renderAdminUsers(which){
-  const pane = document.getElementById('admin-content');
-  const isStudents = which==='students';
-  const url = isStudents ? '/admin/users' : '/admin/organizers';
-  const res = await fetch(API+url);
-  const data = await res.json();
-  const list = (data.users||[]);
+    const pane = document.getElementById('admin-content');
+    const isStudents = which==='students';
+    const url = isStudents ? '/admin/users' : '/admin/organizers';
+    const res = await fetch(API+url);
+    const data = await res.json();
+    const list = (data.users||[]);
   
   // Sort by last seen (most recent first)
   list.sort((a, b) => {
@@ -2855,7 +2855,7 @@ async function renderAdminUsers(which){
     return bLastSeen - aLastSeen;
   });
   
-  pane.innerHTML = `<div class="sub-nav" style="margin-bottom:10px;">
+    pane.innerHTML = `<div class="sub-nav" style="margin-bottom:10px;">
        <button class="sub-nav-btn ${isStudents?'active':''}" onclick="renderAdminUsers('students')">Students</button>
        <button class="sub-nav-btn ${!isStudents?'active':''}" onclick="renderAdminUsers('organizers')">Organizers</button>
      </div>
@@ -2959,7 +2959,7 @@ async function adminOpenEventMedia(eventId){
     
     const grid = `<div class="media-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
         ${items.map(m=>{
-            const src = `${API_BASE}${m.url}`;
+      const src = `${API_BASE}${m.url}`;
             const fileName = m.url.split('/').pop() || 'Unknown';
             const fileSize = m.size ? `(${Math.round(m.size/1024)}KB)` : '';
             
@@ -3191,14 +3191,14 @@ function renderAdminYou(){
             <div>
                 <label style="display: block; margin-bottom: 4px; font-weight: 500;">New Username</label>
                 <input id="admUser" placeholder="Enter new username" style="width: 100%;">
-            </div>
+      </div>
             <div>
                 <label style="display: block; margin-bottom: 4px; font-weight: 500;">New Password</label>
                 <div class="password-wrapper" style="position: relative;">
                     <input id="admPass" type="password" placeholder="Enter new password" style="width: 100%; padding-right: 40px;">
                     <span class="password-toggle" onclick="togglePasswordVisibility('admPass')" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer;">👁️</span>
-                </div>
-            </div>
+      </div>
+    </div>
         </div>
         <div style="display: flex; gap: 12px;">
             <button class="btn" onclick="adminSaveCreds()" style="background: #10b981; border-color: #10b981;">💾 Save Credentials</button>

@@ -41,7 +41,7 @@ const PERSISTENT_UPLOAD_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/
 const PERSISTENT_BACKUP_DIR = (IS_RENDER && HAS_PERSISTENT_DISK) ? "/opt/render/project/backups" : BACKUP_DIR;
 
 // MongoDB Configuration for Permanent Data Storage
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760:Manish%402000@cluster0.mongodb.net/campus_event_hub?retryWrites=true&w=majority";
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://chopramanish760_db_user:OUBXyVDbvcank2GE@campus.urvjcdt.mongodb.net/campus_event_hub?retryWrites=true&w=majority&appName=campus";
 const DB_NAME = "campus_event_hub";
 const COLLECTION_NAME = "app_data";
 
@@ -50,6 +50,11 @@ let collection = null;
 
 // Initialize MongoDB connection
 async function initMongoDB() {
+  if (!MONGODB_URI) {
+    console.log("📋 No MongoDB URI provided, skipping MongoDB connection");
+    return false;
+  }
+  
   try {
     console.log("🔗 Connecting to MongoDB Atlas...");
     console.log(`📋 MongoDB URI: ${MONGODB_URI.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')}`); // Hide credentials in logs
