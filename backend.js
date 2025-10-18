@@ -1281,44 +1281,56 @@ const chatUpload = multer({ dest: PERSISTENT_UPLOAD_DIR, limits: { fileSize: 10 
   if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
   cb(new Error('Only image and video files are allowed'));
 }});
-app.post("/api/media", upload.single("file"), (req, res) => {
-  const data = loadData(); const { eventId, regNumber } = req.body;
-  if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
-  const event = data.events.find(e => e.id === parseInt(eventId));
-  if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
-  if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
-  // Allow media uploads for upcoming, live, and past events
-  const ext = path.extname(req.file.originalname); 
-  const finalName = req.file.filename + ext; 
-  const finalPath = path.join(UPLOAD_DIR, finalName);
-  
-  // Ensure uploads directory exists
-  if (!fs.existsSync(UPLOAD_DIR)) {
-    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-    console.log(`📁 Created uploads directory: ${UPLOAD_DIR}`);
+app.post("/api/media", upload.single("file"), async (req, res) => {
+  try {
+    const data = await loadData();
+    const { eventId, regNumber } = req.body;
+    if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
+    const event = data.events.find(e => e.id === parseInt(eventId));
+    if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
+    if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
+    // Allow media uploads for upcoming, live, and past events
+    const ext = path.extname(req.file.originalname); 
+    const finalName = req.file.filename + ext; 
+    const finalPath = path.join(PERSISTENT_UPLOAD_DIR, finalName);
+    
+    // Ensure uploads directory exists
+    if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+      fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+      console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
+    }
+    
+    // Move file to permanent location
+    fs.renameSync(req.file.path, finalPath);
+    
+    // Verify file was saved to live backend
+    if (!fs.existsSync(finalPath)) {
+      console.error(`❌ File not saved to live backend: ${finalPath}`);
+      return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
+    }
+    
+    const fileStats = fs.statSync(finalPath);
+    console.log(`📁 File saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
+    
+    const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
+    const media = { 
+      id: Date.now(), 
+      eventId: parseInt(eventId), 
+      name: req.file.originalname, 
+      url: "/uploads/" + finalName, 
+      type,
+      size: fileStats.size
+    };
+    data.media.push(media); 
+    await saveData(data);
+    
+    // Update organizer's last seen
+    await updateUserLastSeen(regNumber);
+    
+    res.json({ ok: true, media });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
-  
-  // Move file to permanent location
-  fs.renameSync(req.file.path, finalPath);
-  
-  // Verify file was saved to live backend
-  if (!fs.existsSync(finalPath)) {
-    console.error(`❌ File not saved to live backend: ${finalPath}`);
-    return res.status(500).json({ ok: false, error: "Failed to save file to live backend" });
-  }
-  
-  const fileStats = fs.statSync(finalPath);
-  console.log(`📁 File saved to LIVE BACKEND: ${finalPath} (${fileStats.size} bytes)`);
-  
-  const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
-  const media = { id: Date.now(), eventId: parseInt(eventId), name: req.file.originalname, url: "/uploads/" + finalName, type };
-  data.media.push(media); 
-  saveData(data);
-  
-  // Update organizer's last seen
-  updateUserLastSeen(regNumber);
-  
-  res.json({ ok: true, media });
 });
 app.delete("/api/media/:mediaId", (req, res) => {
   const data = loadData(); const mediaId = parseInt(req.params.mediaId); const { regNumber } = req.body;
@@ -1476,30 +1488,31 @@ app.get("/api/messages/conversations", (req, res) => {
 });
 
 // Upload media message (image/video, <= 10MB)
-app.post('/api/messages/media', chatUpload.single('file'), (req, res) => {
-  const data = loadData();
-  const { eventId, fromReg, toReg } = req.body;
-  if (!req.file || !eventId || !fromReg || !toReg) {
-    return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
-  }
-  const event = data.events.find(e => e.id === Number(eventId));
-  if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
-  const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
-  const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
-  const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
-  if (!isOrganizer && !isBookedUser && !isVolunteer) {
-    return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
-  }
+app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
   try {
+    const data = await loadData();
+    const { eventId, fromReg, toReg } = req.body;
+    if (!req.file || !eventId || !fromReg || !toReg) {
+      return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
+    }
+    const event = data.events.find(e => e.id === Number(eventId));
+    if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
+    const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
+    const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
+    const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
+    if (!isOrganizer && !isBookedUser && !isVolunteer) {
+      return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
+    }
+    
     // Ensure uploads directory exists
-    if (!fs.existsSync(UPLOAD_DIR)) {
-      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-      console.log(`📁 Created uploads directory: ${UPLOAD_DIR}`);
+    if (!fs.existsSync(PERSISTENT_UPLOAD_DIR)) {
+      fs.mkdirSync(PERSISTENT_UPLOAD_DIR, { recursive: true });
+      console.log(`📁 Created uploads directory: ${PERSISTENT_UPLOAD_DIR}`);
     }
     
     const ext = path.extname(req.file.originalname);
     const finalName = req.file.filename + ext;
-    const finalPath = path.join(UPLOAD_DIR, finalName);
+    const finalPath = path.join(PERSISTENT_UPLOAD_DIR, finalName);
     
     // Move file to permanent location
     fs.renameSync(req.file.path, finalPath);
@@ -1523,7 +1536,7 @@ app.post('/api/messages/media', chatUpload.single('file'), (req, res) => {
     const notifMeta = { type: 'chat', eventId: Number(eventId), fromReg, toReg };
     data.notifications[toReg].unshift({ msg: `📎 New ${mediaType} in '${event.title}' chat`, time: new Date().toISOString(), read: false, ...notifMeta });
     data.notifications[fromReg].unshift({ msg: `✅ ${mediaType === 'photo' ? 'Image' : 'Video'} sent for '${event.title}'`, time: new Date().toISOString(), read: false, ...notifMeta });
-    saveData(data);
+    await saveData(data);
     res.json({ ok: true, message: msg });
   } catch (err) {
     res.status(500).json({ ok: false, error: 'Failed to save file.' });
