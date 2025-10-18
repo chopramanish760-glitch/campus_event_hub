@@ -609,6 +609,13 @@ async function renderEvents() {
     const upcomingEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) >= currentDate);
     const pastEvents = filteredEvents.filter(e => new Date(parseEventDateTime(e.date, e.time).getTime() + (e.duration || 0) * 60000) < currentDate);
     
+    console.log("🔍 DEBUG - Filtered events:", filteredEvents.length);
+    console.log("🔍 DEBUG - Upcoming events:", upcomingEvents.length);
+    console.log("🔍 DEBUG - Past events:", pastEvents.length);
+    console.log("🔍 DEBUG - Current date:", currentDate);
+    console.log("🔍 DEBUG - Current home view:", currentHomeView);
+    console.log("🔍 DEBUG - All events:", filteredEvents);
+    
     // Apply sorting
     if (currentSortOrder === 'upcoming') {
         upcomingEvents.sort((a,b) => parseEventDateTime(a.date, a.time) - parseEventDateTime(b.date, b.time));
@@ -630,11 +637,11 @@ async function renderEvents() {
         if (upcomingEvents.length === 0) { sectionEl.innerHTML += `<p class="muted">No upcoming or live events right now.</p>`; }
         else {
             upcomingEvents.forEach(e => {
-                const bookedByMe = Array.isArray(e.bookings) && e.bookings.some(b => b.regNumber === currentUser.regNumber);
-                const isBooked = bookedByMe || userTickets.some(t => t.eventId === e.id);
-                const isCreator = currentUser.role === 'ORGANIZER' && e.creatorRegNumber === currentUser.regNumber;
+                const bookedByMe = currentUser && Array.isArray(e.bookings) && e.bookings.some(b => b.regNumber === currentUser.regNumber);
+                const isBooked = bookedByMe || (currentUser && userTickets.some(t => t.eventId === e.id));
+                const isCreator = currentUser && currentUser.role === 'ORGANIZER' && e.creatorRegNumber === currentUser.regNumber;
                 const isFull = (e.taken || 0) >= (e.capacity || 0);
-                const isVolunteer = Array.isArray(e.volunteers) && e.volunteers.some(v => v.regNumber === currentUser.regNumber);
+                const isVolunteer = currentUser && Array.isArray(e.volunteers) && e.volunteers.some(v => v.regNumber === currentUser.regNumber);
                 const div = document.createElement("div"); div.className = "card";
                 const startTime = parseEventDateTime(e.date, e.time);
                 const statusElementId = `countdown-${e.id}`;
