@@ -309,12 +309,12 @@ async function loadData() {
     return base;
   }
   
-  // Check cache first
-  const now = Date.now();
-  if (cache.data && cache.lastUpdated && (now - cache.lastUpdated) < cache.cacheTimeout) {
-    console.log("📊 Using cached data");
-    return cache.data;
-  }
+  // Cache temporarily disabled to fix event display issues
+  // const now = Date.now();
+  // if (cache.data && cache.lastUpdated && (now - cache.lastUpdated) < cache.cacheTimeout) {
+  //   console.log("📊 Using cached data");
+  //   return cache.data;
+  // }
   
   try {
     const result = await collection.findOne({ type: "app_data" });
@@ -328,9 +328,9 @@ async function loadData() {
         admin: result.data.admin || DEFAULT_ADMIN
       };
       
-      // Update cache
-      cache.data = data;
-      cache.lastUpdated = now;
+      // Cache temporarily disabled
+      // cache.data = data;
+      // cache.lastUpdated = now;
       
       console.log(`📊 Loaded from MongoDB: ${data.users?.length || 0} users, ${data.events?.length || 0} events, ${data.media?.length || 0} media`);
       return data;
@@ -385,12 +385,10 @@ async function saveData(data) {
     console.log(`✅ Data saved to MongoDB: ${validatedData.users?.length || 0} users, ${validatedData.events?.length || 0} events, ${validatedData.media?.length || 0} media`);
     console.log(`🔍 MongoDB result: matched=${result.matchedCount}, modified=${result.modifiedCount}, upserted=${result.upsertedCount}`);
     
-    // Update cache with new data
-    cache.data = validatedData;
-    cache.lastUpdated = Date.now();
-    
-    // Broadcast cache invalidation to all connected clients
-    broadcastCacheInvalidation();
+    // Cache temporarily disabled
+    // cache.data = validatedData;
+    // cache.lastUpdated = Date.now();
+    // broadcastCacheInvalidation();
     
   } catch (err) {
     console.error('❌ Failed to save data to MongoDB:', err);
@@ -458,30 +456,31 @@ app.post("/api/signup", async (req, res) => {
 });
 app.post("/api/login", async (req, res) => {
   try {
-    const regNumber = String((req.body.regNumber||'')).trim();
-    const password = String((req.body.password||''));
+  const regNumber = String((req.body.regNumber||'')).trim();
+  const password = String((req.body.password||''));
     
-    // Check user session cache first
-    const cacheKey = `${regNumber}:${password}`;
-    if (cache.userSessions.has(cacheKey)) {
-      const cachedUser = cache.userSessions.get(cacheKey);
-      console.log("📊 Using cached user session");
-      return res.json({ ok: true, user: cachedUser });
-    }
+    // User session cache temporarily disabled
+    // const cacheKey = `${regNumber}:${password}`;
+    // if (cache.userSessions.has(cacheKey)) {
+    //   const cachedUser = cache.userSessions.get(cacheKey);
+    //   console.log("📊 Using cached user session");
+    //   return res.json({ ok: true, user: cachedUser });
+    // }
     
     const data = await loadData();
-    const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
-    if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
+  const user = data.users.find(u => String(u.regNumber||'').trim() === regNumber && String(u.password||'') === password);
+  if (!user) return res.status(401).json({ ok: false, error: "Invalid credentials" });
     
     // Update last seen on login
     user.lastSeen = new Date().toISOString();
     await saveData(data);
     
     // Cache user session for 5 minutes
-    cache.userSessions.set(cacheKey, user);
-    setTimeout(() => cache.userSessions.delete(cacheKey), 300000); // 5 minutes
+    // Cache temporarily disabled
+    // cache.userSessions.set(cacheKey, user);
+    // setTimeout(() => cache.userSessions.delete(cacheKey), 300000); // 5 minutes
     
-    res.json({ ok: true, user });
+  res.json({ ok: true, user });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -1467,8 +1466,8 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
-    cb(new Error('Only image and video files are allowed'));
+  if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
+  cb(new Error('Only image and video files are allowed'));
   }
 });
 const chatUpload = multer({ 
@@ -1483,10 +1482,10 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
   try {
     const data = await loadData();
     const { eventId, regNumber } = req.body;
-    if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
-    const event = data.events.find(e => e.id === parseInt(eventId));
-    if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
-    if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
+  if (!req.file) { return res.status(400).json({ ok: false, error: "No file uploaded." }); }
+  const event = data.events.find(e => e.id === parseInt(eventId));
+  if (!event) { return res.status(404).json({ ok: false, error: "Event not found" }); }
+  if (event.creatorRegNumber !== regNumber) { return res.status(403).json({ ok: false, error: "You are not authorized to upload media for this event." }); }
     
     // Store file in GridFS with promise-based approach
     const uploadPromise = new Promise((resolve, reject) => {
@@ -1513,7 +1512,7 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     
     // Wait for upload to complete
     const fileId = await uploadPromise;
-    const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
+  const type = req.file.mimetype.startsWith("image/") ? "photo" : "video";
     
     const media = { 
       id: Date.now(),
@@ -1735,18 +1734,18 @@ app.get("/api/messages/conversations", async (req, res) => {
 app.post('/api/messages/media', chatUpload.single('file'), async (req, res) => {
   try {
     const data = await loadData();
-    const { eventId, fromReg, toReg } = req.body;
-    if (!req.file || !eventId || !fromReg || !toReg) {
-      return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
-    }
-    const event = data.events.find(e => e.id === Number(eventId));
-    if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
-    const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
-    const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
-    const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
-    if (!isOrganizer && !isBookedUser && !isVolunteer) {
-      return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
-    }
+  const { eventId, fromReg, toReg } = req.body;
+  if (!req.file || !eventId || !fromReg || !toReg) {
+    return res.status(400).json({ ok: false, error: 'Missing file or fields.' });
+  }
+  const event = data.events.find(e => e.id === Number(eventId));
+  if (!event) return res.status(404).json({ ok: false, error: 'Event not found.' });
+  const isOrganizer = event.creatorRegNumber === fromReg || event.creatorRegNumber === toReg;
+  const isBookedUser = !!event.bookings.find(b => b.regNumber === fromReg || b.regNumber === toReg);
+  const isVolunteer = Array.isArray(event.volunteers) && !!event.volunteers.find(v => v.regNumber === fromReg || v.regNumber === toReg);
+  if (!isOrganizer && !isBookedUser && !isVolunteer) {
+    return res.status(403).json({ ok: false, error: 'Only organizer and booked users/volunteers can chat for this event.' });
+  }
     
     // Store file in GridFS with promise-based approach
     const uploadPromise = new Promise((resolve, reject) => {

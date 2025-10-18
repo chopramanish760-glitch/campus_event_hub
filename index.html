@@ -563,21 +563,20 @@ function clearEventSearch() {
 async function renderEvents() {
     if (countdownInterval) clearInterval(countdownInterval);
     
-    // Check cache first
-    const currentTime = Date.now();
-    if (frontendCache.events && frontendCache.lastEventsUpdate && 
-        (currentTime - frontendCache.lastEventsUpdate) < frontendCache.eventsCacheTimeout) {
-        console.log("📊 Using cached events");
-        window.__eventsCache = frontendCache.events;
-    } else {
-        const res = await fetch(API + "/events"); 
-        const data = await res.json();
-        window.__eventsCache = (data && data.events) || [];
-        
-        // Update cache
-        frontendCache.events = window.__eventsCache;
-        frontendCache.lastEventsUpdate = currentTime;
+    const homeContent = document.getElementById('home-content');
+    
+    // Get events data - cache temporarily disabled
+    const res = await fetch(API + "/events"); 
+    const eventsData = await res.json();
+    window.__eventsCache = (eventsData && eventsData.events) || [];
+    
+    if (!eventsData.ok || !eventsData.events || eventsData.events.length === 0) { 
+        console.log("❌ No events found:", eventsData);
+        homeContent.innerHTML = `<p class="muted">📌 No events found.</p>`; 
+        return; 
     }
+    
+    console.log("✅ Events loaded:", eventsData.events.length, "events");
     
     const c = document.getElementById("screen-home");
     c.innerHTML = `
@@ -612,12 +611,11 @@ async function renderEvents() {
             <button class="sub-nav-btn ${currentHomeView === 'past' ? 'active' : ''}" onclick="setHomeView('past')">Past</button>
         </div>
         <div id="home-content"></div>`;
-    const homeContent = document.getElementById('home-content');
-    if (!data.ok || !data.events || data.events.length === 0) { homeContent.innerHTML = `<p class="muted">📌 No events found.</p>`; return; }
+    
     const currentDate = new Date();
     
     // Apply search and date filters
-    let filteredEvents = data.events.filter(e => {
+    let filteredEvents = eventsData.events.filter(e => {
         const titleLc = String(e.title || '').toLowerCase();
         const venueLc = String(e.venue || '').toLowerCase();
         const categoryLc = String(e.category || '').toLowerCase();
@@ -1540,11 +1538,16 @@ async function renderOrganizer(){
     `;
     
     if (!data.ok) {
+        console.log("❌ Organizer dashboard - Could not load events:", data);
         c.innerHTML += `<p class="muted">Could not load events.</p>`;
         return;
     }
     
+    console.log("✅ Organizer dashboard - Events loaded:", data.events.length, "events");
+    console.log("🔍 Current user:", currentUser);
+    
     const myEvents = data.events.filter(e => e.creatorRegNumber === currentUser.regNumber);
+    console.log("🎯 My events:", myEvents.length, "events");
     if (myEvents.length === 0) {
         c.innerHTML += `<p class="muted">You have not created any events yet.</p>`;
         return;
