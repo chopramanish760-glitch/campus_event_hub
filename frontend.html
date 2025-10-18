@@ -2950,12 +2950,57 @@ async function adminOpenEventMedia(eventId){
     const r = await fetch(API+'/admin/media/'+eventId); const d = await r.json();
     const body = document.getElementById('modal-body');
     const items = (d.media||[]);
-    const grid = items.length ? (`<div class="media-grid">${items.map(m=>{
-      const src = `${API_BASE}${m.url}`;
-      if(m.type==='photo') return `<div class=\"media-item\"><img src=\"${src}\" onclick=\"showLightbox('${m.url}','photo')\"><span class=\"delete-media-btn\" onclick=\"adminDeleteMedia(${m.id})\">✖</span></div>`;
-      return `<div class=\"media-item\"><video src=\"${src}\" onclick=\"showLightbox('${m.url}','video')\"></video><span class=\"delete-media-btn\" onclick=\"adminDeleteMedia(${m.id})\">✖</span></div>`;
-    }).join('')}</div>`) : '<p class="muted">No media.</p>';
-    body.innerHTML = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><a class="map-back-arrow" onclick="closeModal()">←</a><h3 style="margin:0;">Event Media</h3></div>${grid}`;
+    
+    if (items.length === 0) {
+        body.innerHTML = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;"><a class="map-back-arrow" onclick="closeModal()">←</a><h3 style="margin:0;">Event Media</h3></div><p class="muted">No media uploaded for this event.</p>`;
+        document.getElementById('modal').style.display='flex';
+        return;
+    }
+    
+    const grid = `<div class="media-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
+        ${items.map(m=>{
+            const src = `${API_BASE}${m.url}`;
+            const fileName = m.url.split('/').pop() || 'Unknown';
+            const fileSize = m.size ? `(${Math.round(m.size/1024)}KB)` : '';
+            
+            if(m.type==='photo') {
+                return `<div class="media-item" style="position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card-bg);">
+                    <img src="${src}" style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;" 
+                         onclick="showLightbox('${m.url}','photo')" 
+                         onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjE1MCIgdmlld0JveD0iMCAwIDIwMCAxNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTUwIiBmaWxsPSIjZjNmNGY2Ii8+CjxwYXRoIGQ9Ik04MCA2MEwxMjAgNjBMMTAwIDgwTDgwIDYwWiIgZmlsbD0iIzk5YTNhZiIvPgo8Y2lyY2xlIGN4PSIxMDAiIGN5PSIxMDAiIHI9IjE1IiBmaWxsPSIjOTlhM2FmIi8+Cjx0ZXh0IHg9IjEwMCIgeT0iMTMwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmaWxsPSIjNmI3MjgwIiBmb250LXNpemU9IjEyIj5JbWFnZSBub3QgZm91bmQ8L3RleHQ+Cjwvc3ZnPg==';">
+                    <div style="position: absolute; top: 8px; right: 8px;">
+                        <button class="delete-media-btn" onclick="adminDeleteMedia(${m.id})" style="background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✖</button>
+                    </div>
+                    <div style="padding: 8px; font-size: 12px; color: var(--text-muted);">
+                        <div style="font-weight: 500;">${fileName}</div>
+                        <div>${fileSize} • Photo</div>
+                    </div>
+                </div>`;
+            } else {
+                return `<div class="media-item" style="position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card-bg);">
+                    <video src="${src}" style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;" 
+                           onclick="showLightbox('${m.url}','video')" 
+                           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div style="display: none; width: 100%; height: 150px; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; font-size: 12px;">
+                            Video not found
+                        </div>
+                    </video>
+                    <div style="position: absolute; top: 8px; right: 8px;">
+                        <button class="delete-media-btn" onclick="adminDeleteMedia(${m.id})" style="background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✖</button>
+                    </div>
+                    <div style="padding: 8px; font-size: 12px; color: var(--text-muted);">
+                        <div style="font-weight: 500;">${fileName}</div>
+                        <div>${fileSize} • Video</div>
+                    </div>
+                </div>`;
+            }
+        }).join('')}
+    </div>`;
+    
+    body.innerHTML = `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+        <a class="map-back-arrow" onclick="closeModal()">←</a>
+        <h3 style="margin:0;">Event Media (${items.length} items)</h3>
+    </div>${grid}`;
     document.getElementById('modal').style.display='flex';
 }
 async function adminDeleteMedia(id){ if(!confirm('Delete this media?')) return; const r=await fetch(API+'/admin/media/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mediaId:id})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Deleted'); closeModal(); renderAdminMedia(); } else alert('Error: '+(d.error||'Failed')); }
@@ -3136,23 +3181,197 @@ async function adminRejectOrganizer(regNumber) {
   }
 }
 
-function renderAdminYou(){ const pane=document.getElementById('admin-content'); pane.innerHTML=`<h3>Admin Settings</h3>
-  <div class="card">
-    <div style="display:flex; gap:10px; flex-wrap:wrap;">
-      <div style="flex:1; min-width:220px;">
-        <input id="admUser" placeholder="New Username">
-        <div class="password-wrapper" style="margin-top:8px;"><input id="admPass" type="password" placeholder="New Password"><span class="password-toggle" onclick="togglePasswordVisibility('admPass')">👁️</span></div>
-        <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="adminSaveCreds()">Save</button><button class="btn" onclick="adminClearAll()" style="border-color:#ef4444;color:#ef4444;">Clear All Data</button></div>
-      </div>
-      <div style="flex:1; min-width:220px;">
-        <button class="btn" onclick="adminLoadStats()">Analysis</button>
-        <div id="adminStats" class="muted" style="margin-top:8px;"></div>
-      </div>
+function renderAdminYou(){ 
+    const pane=document.getElementById('admin-content'); 
+    pane.innerHTML=`<h3>🔧 Admin Settings & Analysis</h3>
+    
+    <div class="card" style="margin-bottom: 20px;">
+        <h4>🔐 Change Admin Credentials</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div>
+                <label style="display: block; margin-bottom: 4px; font-weight: 500;">New Username</label>
+                <input id="admUser" placeholder="Enter new username" style="width: 100%;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 4px; font-weight: 500;">New Password</label>
+                <div class="password-wrapper" style="position: relative;">
+                    <input id="admPass" type="password" placeholder="Enter new password" style="width: 100%; padding-right: 40px;">
+                    <span class="password-toggle" onclick="togglePasswordVisibility('admPass')" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); cursor: pointer;">👁️</span>
+                </div>
+            </div>
+        </div>
+        <div style="display: flex; gap: 12px;">
+            <button class="btn" onclick="adminSaveCreds()" style="background: #10b981; border-color: #10b981;">💾 Save Credentials</button>
+            <button class="btn" onclick="adminClearFields()" style="background: #6b7280; border-color: #6b7280;">🗑️ Clear Fields</button>
+        </div>
+        <div class="muted" style="margin-top: 8px; font-size: 0.9rem;">
+            ⚠️ Changing credentials will require you to log in again with the new details.
+        </div>
     </div>
-  </div>`; }
-async function adminSaveCreds(){ const username=document.getElementById('admUser').value; const password=document.getElementById('admPass').value; const r=await fetch(API+'/admin/credentials',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}); const d=await r.json(); if(r.ok&&d.ok){ alert('Saved'); } else alert('Error: '+(d.error||'Failed')); }
-async function adminClearAll(){ if(!confirm('This will delete all users, events, media, and notifications. Continue?')) return; const r=await fetch(API+'/admin/clear-all',{method:'POST'}); const d=await r.json(); if(r.ok&&d.ok){ alert('All data cleared'); setAdminTab('users'); } else alert('Error: '+(d.error||'Failed')); }
-async function adminLoadStats(){ try{ const r=await fetch(API+'/admin/stats'); const d=await r.json(); if(r.ok&&d.ok){ document.getElementById('adminStats').textContent = `Users: ${d.totalUsers} • Organizers: ${d.totalOrganizers} • Events: ${d.totalEvents} • Active (5m): ${d.activeUsers}`; } }catch{} }
+    
+    <div class="card" style="margin-bottom: 20px;">
+        <h4>📊 System Analysis</h4>
+        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+            <button class="btn" onclick="adminLoadStats()" style="background: #3b82f6; border-color: #3b82f6;">📈 Load Analysis</button>
+            <button class="btn" onclick="adminExportData()" style="background: #8b5cf6; border-color: #8b5cf6;">📤 Export Data</button>
+        </div>
+        <div id="adminStats" class="muted" style="margin-top: 8px; padding: 12px; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border);">
+            Click "Load Analysis" to see system statistics
+        </div>
+    </div>
+    
+    <div class="card" style="border-color: #ef4444;">
+        <h4 style="color: #ef4444;">⚠️ Danger Zone</h4>
+        <div style="margin-bottom: 12px;">
+            <p class="muted" style="margin-bottom: 8px;">This will permanently delete ALL data including:</p>
+            <ul style="margin: 0; padding-left: 20px; color: var(--text-muted);">
+                <li>All user accounts (students & organizers)</li>
+                <li>All events and bookings</li>
+                <li>All media files</li>
+                <li>All notifications and messages</li>
+            </ul>
+        </div>
+        <button class="btn" onclick="adminClearAll()" style="background: #ef4444; border-color: #ef4444;">🗑️ Clear All Data</button>
+    </div>`; 
+}
+async function adminSaveCreds(){ 
+    const username = document.getElementById('admUser').value.trim();
+    const password = document.getElementById('admPass').value.trim();
+    
+    if (!username || !password) {
+        alert('❌ Please enter both username and password');
+        return;
+    }
+    
+    if (username.length < 3) {
+        alert('❌ Username must be at least 3 characters long');
+        return;
+    }
+    
+    if (password.length < 6) {
+        alert('❌ Password must be at least 6 characters long');
+        return;
+    }
+    
+    const confirmMsg = `Are you sure you want to change admin credentials?\n\nNew Username: ${username}\n\n⚠️ You will need to log in again with these new credentials.`;
+    if (!confirm(confirmMsg)) return;
+    
+    try {
+        const r = await fetch(API+'/admin/credentials', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username, password})
+        });
+        const d = await r.json();
+        
+        if (r.ok && d.ok) {
+            alert('✅ Admin credentials updated successfully!\n\nYou will be logged out and need to log in again.');
+            adminClearFields();
+            adminLogout();
+        } else {
+            alert('❌ Error: ' + (d.error || 'Failed to update credentials'));
+        }
+    } catch (err) {
+        alert('❌ Network error: ' + err.message);
+    }
+}
+
+function adminClearFields() {
+    document.getElementById('admUser').value = '';
+    document.getElementById('admPass').value = '';
+}
+
+async function adminClearAll(){ 
+    const confirmMsg = `⚠️ DANGER: This will PERMANENTLY DELETE ALL DATA!\n\nThis includes:\n• All user accounts (students & organizers)\n• All events and bookings\n• All media files\n• All notifications and messages\n\nThis action CANNOT be undone!\n\nType "DELETE ALL" to confirm:`;
+    
+    const userInput = prompt(confirmMsg);
+    if (userInput !== "DELETE ALL") {
+        alert('❌ Operation cancelled. You must type "DELETE ALL" exactly to confirm.');
+        return;
+    }
+    
+    const finalConfirm = confirm('🚨 FINAL CONFIRMATION 🚨\n\nYou are about to PERMANENTLY DELETE ALL DATA!\n\nThis will:\n• Delete ALL users, events, media, bookings\n• Cannot be undone\n• Will require manual data restoration\n\nAre you absolutely sure?');
+    if (!finalConfirm) return;
+    
+    try {
+        const r = await fetch(API+'/admin/clear-all', {method: 'POST'});
+        const d = await r.json();
+        
+        if (r.ok && d.ok) {
+            alert('✅ All data has been cleared successfully!');
+            setAdminTab('users');
+            renderAdminUsers('students');
+        } else {
+            alert('❌ Error: ' + (d.error || 'Failed to clear data'));
+        }
+    } catch (err) {
+        alert('❌ Network error: ' + err.message);
+    }
+}
+
+async function adminLoadStats(){ 
+    try {
+        document.getElementById('adminStats').innerHTML = '<div style="text-align: center; padding: 20px;">🔄 Loading analysis...</div>';
+        
+        const r = await fetch(API+'/admin/stats');
+        const d = await r.json();
+        
+        if (r.ok && d.ok) {
+            const statsHtml = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;">
+                    <div style="text-align: center; padding: 12px; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="font-size: 24px; font-weight: bold; color: #3b82f6;">${d.totalUsers}</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Total Users</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="font-size: 24px; font-weight: bold; color: #10b981;">${d.totalOrganizers}</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Organizers</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="font-size: 24px; font-weight: bold; color: #f59e0b;">${d.totalEvents}</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Events</div>
+                    </div>
+                    <div style="text-align: center; padding: 12px; background: var(--card-bg); border-radius: 6px; border: 1px solid var(--border);">
+                        <div style="font-size: 24px; font-weight: bold; color: #8b5cf6;">${d.activeUsers}</div>
+                        <div style="font-size: 12px; color: var(--text-muted);">Active (5m)</div>
+                    </div>
+                </div>
+                <div style="margin-top: 12px; padding: 8px; background: var(--card-bg); border-radius: 4px; font-size: 12px; color: var(--text-muted);">
+                    📊 Last updated: ${new Date().toLocaleString()}
+                </div>
+            `;
+            document.getElementById('adminStats').innerHTML = statsHtml;
+        } else {
+            document.getElementById('adminStats').innerHTML = '<div style="color: #ef4444;">❌ Failed to load statistics</div>';
+        }
+    } catch (err) {
+        document.getElementById('adminStats').innerHTML = '<div style="color: #ef4444;">❌ Network error: ' + err.message + '</div>';
+    }
+}
+
+async function adminExportData() {
+    try {
+        const r = await fetch(API + '/admin/export');
+        const d = await r.json();
+        
+        if (r.ok && d.ok) {
+            const blob = new Blob([JSON.stringify(d.data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `campus-event-hub-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            alert('✅ Data exported successfully!');
+        } else {
+            alert('❌ Error: ' + (d.error || 'Failed to export data'));
+        }
+    } catch (err) {
+        alert('❌ Network error: ' + err.message);
+    }
+}
 
 // ---------- Debug & Data Management ----------
 async function checkBackendStatus() {
