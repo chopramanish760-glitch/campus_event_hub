@@ -1529,4 +1529,3 @@ app.post('/api/account/delete', (req, res) => {
   saveData(data);
   return res.json({ ok: true });
 });
-});
