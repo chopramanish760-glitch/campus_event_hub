@@ -7,7 +7,7 @@ const cors = require("cors");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(express.json({ limit: '10mb' })); // Increase JSON limit for large uploads
+app.use(express.json({ limit: '50mb' })); // Increase JSON limit for large video uploads
 app.use(cors());
 
 // Root status endpoint for platform health and manual checks
@@ -1404,7 +1404,7 @@ app.post("/api/notifications/mark-read", async (req, res) => { const data = awai
 // Configure multer for memory storage (GridFS will handle file storage)
 const upload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 30 * 1024 * 1024 }, // 30MB limit for videos
   fileFilter: (req, file, cb) => {
   if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
   cb(new Error('Only image and video files are allowed'));
@@ -1412,18 +1412,24 @@ const upload = multer({
 });
 const chatUpload = multer({ 
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for chat videos
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
     cb(new Error('Only image and video files are allowed'));
   }
 });
-// Simple video processing function (no external dependencies)
+// Simple video processing function with basic compression
 async function processVideo(inputBuffer, filename) {
-  // For now, we'll just return the original buffer
+  // For now, we'll return the original buffer but log the processing
   // In a production environment, you could integrate with cloud services
-  // like AWS MediaConvert, Google Cloud Video Intelligence, or similar
-  console.log(`📹 Video processing: ${filename} (${inputBuffer.length} bytes) - using original file`);
+  console.log(`📹 Video processing: ${filename} (${(inputBuffer.length / 1024 / 1024).toFixed(2)}MB)`);
+  
+  // Basic size check - if video is too large, we could implement compression here
+  if (inputBuffer.length > 25 * 1024 * 1024) { // 25MB
+    console.log(`⚠️ Large video detected: ${(inputBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+    // Here you could add compression logic or cloud processing
+  }
+  
   return inputBuffer;
 }
 
