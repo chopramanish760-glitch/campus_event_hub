@@ -2000,7 +2000,7 @@ async function showEventMediaModal(event) {
                 } else if (media.type === "video") {
                     const mediaUrl = media._id ? `${API_BASE}/api/media/file/${media._id}` : `${API_BASE}${media.url}`;
                     mediaHtml += `
-                        <div class="video-container" style="position: relative; display: inline-block;">
+                        <div class="video-container" style="position: relative;">
                             <video src="${mediaUrl}" 
                                    preload="metadata" 
                                    playsinline 
@@ -2010,6 +2010,7 @@ async function showEventMediaModal(event) {
                                    onprogress="updateVideoProgress(this, event)"
                                    oncanplay="hideVideoLoading(this)"
                                    onerror="hideVideoLoading(this)"
+                                   onloadedmetadata="this.currentTime=1;"
                                    style="cursor: pointer;">
                             </video>
                             <div class="video-loading-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; flex-direction: column;">
@@ -2717,7 +2718,8 @@ function showLightbox(e,t){
                        preload="metadata" 
                        playsinline 
                        webkit-playsinline 
-                       style="max-width: 100%; max-height: 80vh;">
+                       muted
+                       style="max-width: 100%; max-height: 80vh; background: #000;">
                     <source src="${fullUrl}" type="video/mp4">
                     <source src="${fullUrl}" type="video/webm">
                     <source src="${fullUrl}" type="video/ogg">
@@ -3370,7 +3372,8 @@ async function adminOpenEventMedia(eventId){
                                onloadstart="showVideoLoading(this)"
                                onprogress="updateVideoProgress(this, event)"
                                oncanplay="hideVideoLoading(this)"
-                               onerror="hideVideoLoading(this)">
+                               onerror="hideVideoLoading(this)"
+                               onloadedmetadata="this.currentTime=1;">
                         </video>
                         <div class="video-loading-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; flex-direction: column;">
                             <div class="loading-spinner" style="width: 30px; height: 30px; border: 3px solid #f3f3f3; border-top: 3px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;"></div>
