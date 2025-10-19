@@ -1989,46 +1989,43 @@ async function showEventMediaModal(event) {
         const eventsData = await eventsRes.json();
         const eventData = eventsData.events.find(e => e.id === event.id);
         
-        let mediaHtml = '<div class="media-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; padding:10px;">';
+        let mediaHtml = '<div class="media-grid">';
         
         if (eventData.media && eventData.media.length > 0) {
-            // Build media items with proper loading states
-            eventData.media.forEach((media, index) => {
-                const mediaUrl = `${API_BASE}${media.url}`;
-                
+            eventData.media.forEach(media => {
+                mediaHtml += '<div class="media-item">';
                 if (media.type === "photo") {
-                    mediaHtml += `
-                        <div class="media-item" style="position:relative; text-align:center;">
-                            <img src="${mediaUrl}" 
-                                 style="width:120px; height:80px; object-fit:cover; border-radius:8px; cursor:pointer; display:block; margin:0 auto; background:#f0f0f0;"
-                                 onclick="showLightbox('${media.url}', 'photo')"
-                                 onload="this.style.background='transparent'"
-                                 onerror="this.style.background='#ffebee'; this.alt='Failed to load image';">
-                            <div style="margin-top:4px; font-size:12px; color:#666; word-break:break-all;">${media.filename || `Image ${index + 1}`}</div>
-                            <button onclick="deleteMedia(${media.id}, ${event.id})" 
-                                    style="position:absolute; top:4px; right:4px; background:red; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">×</button>
-                        </div>
-                    `;
+                    const mediaUrl = media._id ? `${API_BASE}/api/media/file/${media._id}` : `${API_BASE}${media.url}`;
+                    mediaHtml += `<img src="${mediaUrl}" onclick="showLightbox('${media._id || media.url}', 'photo')">`;
                 } else if (media.type === "video") {
+                    const mediaUrl = media._id ? `${API_BASE}/api/media/file/${media._id}` : `${API_BASE}${media.url}`;
                     mediaHtml += `
-                        <div class="media-item" style="position:relative; text-align:center;">
+                        <div class="video-container" style="position: relative; display: inline-block;">
                             <video src="${mediaUrl}" 
-                                   style="width:120px; height:80px; object-fit:cover; border-radius:8px; cursor:pointer; display:block; margin:0 auto; background:#f0f0f0;"
-                                   onclick="showLightbox('${media.url}', 'video')"
-                                   preload="metadata"
+                                   preload="metadata" 
                                    playsinline 
-                                   webkit-playsinline
-                                   onloadedmetadata="this.currentTime=0.1; this.style.background='transparent'"
-                                   onerror="this.style.background='#ffebee'; this.poster='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjgwIiB2aWV3Qm94PSIwIDAgMTIwIDgwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMjAiIGhlaWdodD0iODAiIGZpbGw9IiNmNWY1ZjUiLz48cGF0aCBkPSJNNDggMzJsMjQgMTZMMTkyIDMyVjQ4SDQ4VjMyWiIgZmlsbD0iIzk5OTk5OSIvPjx0ZXh0IHg9IjYwIiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjEwIiBmaWxsPSIjOTk5OTk5Ij5WaWRlbyBGYWlsZWQ8L3RleHQ+PC9zdmc+';">
-                            <div style="margin-top:4px; font-size:12px; color:#666; word-break:break-all;">${media.filename || `Video ${index + 1}`}</div>
-                            <button onclick="deleteMedia(${media.id}, ${event.id})" 
-                                    style="position:absolute; top:4px; right:4px; background:red; color:white; border:none; border-radius:50%; width:20px; height:20px; font-size:12px; cursor:pointer; display:flex; align-items:center; justify-content:center;">×</button>
+                                   webkit-playsinline 
+                                   onloadedmetadata="this.currentTime=0.1;"
+                                   onloadstart="showVideoLoading(this)"
+                                   onprogress="updateVideoProgress(this, event)"
+                                   oncanplay="hideVideoLoading(this)"
+                                   onerror="hideVideoLoading(this)"
+                                   style="cursor: pointer;">
+                            </video>
+                            <div class="video-loading-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; flex-direction: column;">
+                                <div class="loading-spinner" style="width: 30px; height: 30px; border: 3px solid #f3f3f3; border-top: 3px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;"></div>
+                                <div class="loading-text" style="color: white; font-size: 12px; text-align: center;">Loading...</div>
+                                <div class="progress-bar" style="width: 80%; height: 4px; background: #333; border-radius: 2px; margin-top: 5px;">
+                                    <div class="progress-fill" style="height: 100%; background: #007bff; border-radius: 2px; width: 0%; transition: width 0.3s ease;"></div>
+                                </div>
+                            </div>
                         </div>
                     `;
                 }
+                mediaHtml += `<span class="delete-media-btn" onclick="deleteMedia(${media.id}, ${event.id})">✖</span></div>`;
             });
         } else {
-            mediaHtml += '<p style="grid-column: 1 / -1; text-align:center; color:#666; padding:20px;">No media uploaded for this event yet.</p>';
+            mediaHtml += '<p class="muted" style="grid-column: 1 / -1;">No media uploaded for this event yet.</p>';
         }
         
         mediaHtml += "</div>";
@@ -2636,19 +2633,75 @@ async function confirmDeleteAccount(){
     }catch(err){ alert('Network error'); }
 }
 function showEventIdCard(e){const t="https://static.vecteezy.com/system/resources/previews/024/183/525/original/avatar-of-a-man-portrait-of-a-young-guy-illustration-of-male-character-in-modern-color-style-vector.jpg",n="https://static.vecteezy.com/system/resources/previews/024/183/500/original/female-avatar-brunette-woman-portrait-illustration-of-a-female-character-in-a-modern-color-style-vector.jpg";let a="https://i.imgur.com/KBOhEwI.png";if(e.creatorGender&&e.creatorGender.toLowerCase()==="male")a=t;else if(e.creatorGender&&e.creatorGender.toLowerCase()==="female")a=n;const i=document.getElementById("modal-body");i.innerHTML=`<div class="id-card"><div class="id-card-header"><h3>EVENT ID CARD</h3></div><img src="${a}" alt="Organizer Avatar" class="id-card-avatar"><div class="id-card-details"><p style="font-size: 1.2rem"><strong>${capitalizeWords(e.title)}</strong></p><p><strong>Cat:</strong> ${e.category}</p><p><strong>Location:</strong> ${capitalizeWords(e.venue)}</p><p><strong>Organizer:</strong> ${capitalizeWords(e.creatorName)}</p></div></div>`,document.getElementById("modal").style.display="flex"}
+// Video loading progress functions
+function showVideoLoading(video) {
+    const container = video.closest('.video-container');
+    const overlay = container.querySelector('.video-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+    }
+}
+
+function updateVideoProgress(video, event) {
+    const container = video.closest('.video-container');
+    const progressFill = container.querySelector('.progress-fill');
+    const loadingText = container.querySelector('.loading-text');
+    
+    if (video.buffered.length > 0 && video.duration > 0) {
+        const bufferedEnd = video.buffered.end(video.buffered.length - 1);
+        const progress = (bufferedEnd / video.duration) * 100;
+        
+        if (progressFill) {
+            progressFill.style.width = progress + '%';
+        }
+        
+        if (loadingText) {
+            loadingText.textContent = `Loading... ${Math.round(progress)}%`;
+        }
+    }
+}
+
+function hideVideoLoading(video) {
+    const container = video.closest('.video-container');
+    const overlay = container.querySelector('.video-loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+    // Add click handler only after loading is complete
+    video.style.cursor = 'pointer';
+    video.onclick = function() {
+        showLightbox(video.src.replace(API_BASE + '/api/media/file/', '').replace(API_BASE, ''), 'video');
+    };
+}
+
 function showLightbox(e,t){
     const modal = document.getElementById("lightbox-modal");
     const content = document.getElementById("lightbox-content");
-    const fullUrl = `${API_BASE}${e}`;
+    // Handle both GridFS _id and regular URL formats
+    const fullUrl = e.startsWith('/') ? `${API_BASE}${e}` : `${API_BASE}/api/media/file/${e}`;
     const isOrganizer = currentUser && currentUser.role === 'ORGANIZER';
     let mediaHtml = '';
     if (t === 'photo') mediaHtml = `<img src="${fullUrl}">`;
-    if (t === 'video') mediaHtml = `<video src="${fullUrl}" controls autoplay preload="metadata" playsinline webkit-playsinline style="max-width: 100%; max-height: 80vh;" onloadedmetadata="this.currentTime=0.1;" oncanplay="this.currentTime=0.1;">
-        <source src="${fullUrl}" type="video/mp4">
-        <source src="${fullUrl}" type="video/webm">
-        <source src="${fullUrl}" type="video/ogg">
-        Your browser does not support the video tag.
-    </video>`;
+    if (t === 'video') {
+        mediaHtml = `
+            <div style="position: relative; text-align: center;">
+                <video src="${fullUrl}" 
+                       controls 
+                       autoplay 
+                       preload="metadata" 
+                       playsinline 
+                       webkit-playsinline 
+                       style="max-width: 100%; max-height: 80vh;" 
+                       onloadedmetadata="this.currentTime=0.1;" 
+                       oncanplay="this.currentTime=0.1;">
+                    <source src="${fullUrl}" type="video/mp4">
+                    <source src="${fullUrl}" type="video/webm">
+                    <source src="${fullUrl}" type="video/ogg">
+                    Your browser does not support the video tag.
+                </video>
+            </div>
+        `;
+    }
     const header = `<a class="lightbox-back-arrow" onclick="closeLightbox(event)">←</a>`;
     const downloadBar = isOrganizer ? `<div style="text-align:center; margin-top:12px;"><a href="${fullUrl}" download class="btn" style="display:inline-block; width:auto">⬇ Download</a></div>` : '';
     content.innerHTML = header + mediaHtml + downloadBar;
