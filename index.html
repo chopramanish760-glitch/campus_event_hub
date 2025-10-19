@@ -57,7 +57,7 @@
   .modal-content { background: #1f1f1f; border-radius: 12px; padding: 20px; max-height: 85vh; overflow: auto; width: 90vw; max-width: 520px; }
   .modal-content img, .modal-content video { max-width: 100%; height: auto; border-radius: 8px; }
   .media-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap:10px; }
-  .media-item img, .media-item video { width:100%; height:auto; display:block; border-radius:8px; }
+  .media-item img, .media-item video { width:100%; height:120px; object-fit:cover; display:block; border-radius:8px; }
   @media (max-width: 420px) {
     .modal-content { width: 94vw; padding: 16px; }
     .media-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
@@ -78,7 +78,7 @@
   @keyframes scroll-left { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
   .media-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .media-item { position: relative; }
-  .media-item img, .media-item video { width: 100%; height: 90px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+  .media-item img, .media-item video { width: 100%; height: 120px; object-fit: cover; border-radius: 8px; cursor: pointer; }
   .media-item .play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
   .media-item .play-icon { width: 36px; height: 36px; border-radius: 50%; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; color: white; font-size: 18px; border: 2px solid rgba(255,255,255,0.8); }
   .delete-media-btn { position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.6); color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; border: 1px solid white; z-index: 5; }
@@ -2067,6 +2067,13 @@ async function deleteMedia(e,t){if(confirm("Are you sure you want to delete this
 function triggerMediaUpload(e){const t=document.getElementById('eventMediaFile')||(()=>{const f=document.createElement('input');f.type='file';f.accept='image/*,video/*';f.style.display='none';f.id='eventMediaFile';document.body.appendChild(f);return f;})();t.onchange=()=>{t.files&&t.files[0]&&uploadMediaForEvent(e,t.files[0])};t.click()}
 async function uploadMediaForEvent(eventId, file) {
     try {
+        // Check file size before upload (30MB limit)
+        const maxSize = 30 * 1024 * 1024; // 30MB in bytes
+        if (file.size > maxSize) {
+            alert(`File is too large! Please upload a file less than 30MB.\n\nYour file: ${(file.size / (1024 * 1024)).toFixed(1)}MB\nMax allowed: 30MB`);
+            return;
+        }
+        
         // Show progress meter
         const progressDiv = document.getElementById('upload-progress');
         const progressBar = document.getElementById('upload-progress-bar');
