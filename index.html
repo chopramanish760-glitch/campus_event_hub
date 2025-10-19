@@ -2005,7 +2005,6 @@ async function showEventMediaModal(event) {
                                    preload="metadata" 
                                    playsinline 
                                    webkit-playsinline 
-                                   onloadedmetadata="this.currentTime=0.1;"
                                    onloadstart="showVideoLoading(this)"
                                    onprogress="updateVideoProgress(this, event)"
                                    oncanplay="hideVideoLoading(this)"
@@ -2687,13 +2686,10 @@ function showLightbox(e,t){
             <div style="position: relative; text-align: center;">
                 <video src="${fullUrl}" 
                        controls 
-                       autoplay 
                        preload="metadata" 
                        playsinline 
                        webkit-playsinline 
-                       style="max-width: 100%; max-height: 80vh;" 
-                       onloadedmetadata="this.currentTime=0.1;" 
-                       oncanplay="this.currentTime=0.1;">
+                       style="max-width: 100%; max-height: 80vh;">
                     <source src="${fullUrl}" type="video/mp4">
                     <source src="${fullUrl}" type="video/webm">
                     <source src="${fullUrl}" type="video/ogg">
@@ -3336,13 +3332,25 @@ async function adminOpenEventMedia(eventId){
                 </div>`;
             } else {
                 return `<div class="media-item" style="position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--card-bg);">
-                    <video src="${src}" style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;" 
-                           onclick="showLightbox('${m.url}','video')" 
-                           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                        <div style="display: none; width: 100%; height: 150px; align-items: center; justify-content: center; background: #f3f4f6; color: #6b7280; font-size: 12px;">
-                            Video not found
+                    <div class="video-container" style="position: relative;">
+                        <video src="${src}" 
+                               style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;" 
+                               preload="metadata" 
+                               playsinline 
+                               webkit-playsinline
+                               onloadstart="showVideoLoading(this)"
+                               onprogress="updateVideoProgress(this, event)"
+                               oncanplay="hideVideoLoading(this)"
+                               onerror="hideVideoLoading(this)">
+                        </video>
+                        <div class="video-loading-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; flex-direction: column;">
+                            <div class="loading-spinner" style="width: 30px; height: 30px; border: 3px solid #f3f3f3; border-top: 3px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;"></div>
+                            <div class="loading-text" style="color: white; font-size: 12px; text-align: center;">Loading...</div>
+                            <div class="progress-bar" style="width: 80%; height: 4px; background: #333; border-radius: 2px; margin-top: 5px;">
+                                <div class="progress-fill" style="height: 100%; background: #007bff; border-radius: 2px; width: 0%; transition: width 0.3s ease;"></div>
+                            </div>
                         </div>
-                    </video>
+                    </div>
                     <div style="position: absolute; top: 8px; right: 8px;">
                         <button class="delete-media-btn" onclick="adminDeleteMedia(${m.id})" style="background: rgba(239,68,68,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 12px;">✖</button>
                     </div>
