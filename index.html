@@ -2005,6 +2005,7 @@ async function showEventMediaModal(event) {
                                    preload="metadata" 
                                    playsinline 
                                    webkit-playsinline 
+                                   data-media-id="${media._id || media.url}"
                                    onloadstart="showVideoLoading(this)"
                                    onprogress="updateVideoProgress(this, event)"
                                    oncanplay="hideVideoLoading(this)"
@@ -2635,20 +2636,32 @@ function showEventIdCard(e){const t="https://static.vecteezy.com/system/resource
 // Video loading progress functions
 function showVideoLoading(video) {
     const container = video.closest('.video-container');
+    if (!container) return;
+    
     const overlay = container.querySelector('.video-loading-overlay');
     if (overlay) {
         overlay.style.display = 'flex';
+        // Reset progress
+        const progressFill = overlay.querySelector('.progress-fill');
+        const loadingText = overlay.querySelector('.loading-text');
+        if (progressFill) progressFill.style.width = '0%';
+        if (loadingText) loadingText.textContent = 'Loading...';
     }
 }
 
 function updateVideoProgress(video, event) {
     const container = video.closest('.video-container');
-    const progressFill = container.querySelector('.progress-fill');
-    const loadingText = container.querySelector('.loading-text');
+    if (!container) return;
+    
+    const overlay = container.querySelector('.video-loading-overlay');
+    if (!overlay) return;
+    
+    const progressFill = overlay.querySelector('.progress-fill');
+    const loadingText = overlay.querySelector('.loading-text');
     
     if (video.buffered.length > 0 && video.duration > 0) {
         const bufferedEnd = video.buffered.end(video.buffered.length - 1);
-        const progress = (bufferedEnd / video.duration) * 100;
+        const progress = Math.min((bufferedEnd / video.duration) * 100, 100);
         
         if (progressFill) {
             progressFill.style.width = progress + '%';
@@ -2657,19 +2670,34 @@ function updateVideoProgress(video, event) {
         if (loadingText) {
             loadingText.textContent = `Loading... ${Math.round(progress)}%`;
         }
+        
+        // Check if fully loaded
+        if (progress >= 100) {
+            setTimeout(() => hideVideoLoading(video), 500); // Small delay for smooth transition
+        }
     }
 }
 
 function hideVideoLoading(video) {
     const container = video.closest('.video-container');
+    if (!container) return;
+    
     const overlay = container.querySelector('.video-loading-overlay');
     if (overlay) {
         overlay.style.display = 'none';
     }
+    
     // Add click handler only after loading is complete
     video.style.cursor = 'pointer';
-    video.onclick = function() {
-        showLightbox(video.src.replace(API_BASE + '/api/media/file/', '').replace(API_BASE, ''), 'video');
+    video.onclick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Use data-media-id attribute for reliable media ID
+        const mediaId = video.getAttribute('data-media-id');
+        if (mediaId) {
+            showLightbox(mediaId, 'video');
+        }
     };
 }
 
@@ -3338,6 +3366,7 @@ async function adminOpenEventMedia(eventId){
                                preload="metadata" 
                                playsinline 
                                webkit-playsinline
+                               data-media-id="${m._id || m.url}"
                                onloadstart="showVideoLoading(this)"
                                onprogress="updateVideoProgress(this, event)"
                                oncanplay="hideVideoLoading(this)"
