@@ -998,6 +998,35 @@ app.post("/api/waitlist", async (req, res) => {
   res.json({ ok: true });
 });
 
+// Leave waitlist
+app.post("/api/waitlist/leave", async (req, res) => {
+  const data = await loadData();
+  const { eventId, regNumber } = req.body;
+  const event = data.events.find(e => e.id === Number(eventId));
+  const user = data.users.find(u => u.regNumber === regNumber);
+  if (!event || !user) return res.status(404).json({ ok: false, error: "Event or user not found" });
+  
+  event.waitlist = Array.isArray(event.waitlist) ? event.waitlist : [];
+  const waitlistIndex = event.waitlist.findIndex(w => w.regNumber === regNumber);
+  if (waitlistIndex === -1) return res.status(400).json({ ok: false, error: "Not on waitlist for this event." });
+  
+  event.waitlist.splice(waitlistIndex, 1);
+  
+  if (!data.notifications) data.notifications = {};
+  if (!data.notifications[regNumber]) data.notifications[regNumber] = [];
+  data.notifications[regNumber].unshift({ msg: `📝 You left the waitlist for '${event.title}'.`, time: new Date().toISOString(), read: false });
+  await saveData(data);
+  
+  // Update user's last seen
+  await updateUserLastSeen(regNumber);
+  
+  try {
+    broadcast('events_changed', { reason: 'waitlist_left', eventId: event.id });
+    broadcast('tickets_changed', { reason: 'waitlist_left', eventId: event.id }, regNumber);
+  } catch {}
+  res.json({ ok: true });
+});
+
 // ---------- Volunteer Endpoints ----------
 // List volunteers for an event (organizer only)
 app.get('/api/volunteers/:eventId', async (req, res) => {
@@ -1136,6 +1165,38 @@ app.post('/api/volunteers/respond', async (req, res) => {
         if(!data.notifications) data.notifications={};
         if(!data.notifications[regNumber]) data.notifications[regNumber]=[];
         data.notifications[regNumber].unshift({ msg: `🎟️ Your ticket for '${event.title}' was removed as you are now a volunteer.`, time:new Date().toISOString(), read:false });
+        
+        // Auto-book someone from waiting list if seats are available
+        event.waitlist = Array.isArray(event.waitlist) ? event.waitlist : [];
+        if (event.waitlist.length > 0 && event.taken < event.capacity) {
+          const availableSeats = event.capacity - event.taken;
+          const seatsToAutoBook = Math.min(availableSeats, event.waitlist.length);
+          
+          console.log(`Volunteer freed ${removed} seat(s). Auto-booking ${seatsToAutoBook} users from waitlist.`);
+          
+          const usersToAutoBook = event.waitlist.splice(0, seatsToAutoBook);
+          
+          usersToAutoBook.forEach(waitlistEntry => {
+            const waitlistUser = data.users.find(u => u.regNumber === waitlistEntry.regNumber);
+            if (waitlistUser) {
+              event.taken += 1;
+              const seatNumber = event.taken;
+              const roleLetter = waitlistUser.role === "ORGANIZER" ? "O" : "S";
+              const booking = { regNumber: waitlistUser.regNumber, name: waitlistUser.name, seat: seatNumber, role: roleLetter, eventId: event.id, bookedAt: new Date().toISOString() };
+              event.bookings.push(booking);
+              
+              console.log(`Auto-booked user ${waitlistUser.regNumber} for event ${event.id} with seat ${seatNumber}`);
+              
+              // Send confirmation notification
+              if (!data.notifications[waitlistUser.regNumber]) data.notifications[waitlistUser.regNumber] = [];
+              data.notifications[waitlistUser.regNumber].unshift({ 
+                msg: `🎉 Great news! You've been auto-booked for '${event.title}' due to a volunteer freeing up space. Your seat: ${seatNumber}`, 
+                time: new Date().toISOString(), 
+                read: false 
+              });
+            }
+          });
+        }
       }
       event.waitlist = Array.isArray(event.waitlist) ? event.waitlist.filter(w => w.regNumber !== regNumber) : [];
     }catch{}

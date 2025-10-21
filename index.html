@@ -645,6 +645,7 @@ async function renderEvents() {
                 const isCreator = currentUser && currentUser.role === 'ORGANIZER' && e.creatorRegNumber === currentUser.regNumber;
                 const isFull = (e.taken || 0) >= (e.capacity || 0);
                 const isVolunteer = currentUser && Array.isArray(e.volunteers) && e.volunteers.some(v => v.regNumber === currentUser.regNumber);
+                const isOnWaitlist = currentUser && Array.isArray(e.waitlist) && e.waitlist.some(w => w.regNumber === currentUser.regNumber);
                 const div = document.createElement("div"); div.className = "card";
                 const startTime = parseEventDateTime(e.date, e.time);
                 const statusElementId = `countdown-${e.id}`;
@@ -670,12 +671,14 @@ async function renderEvents() {
                     ? `<button class="btn" disabled style="background: var(--green-accent); border-color: var(--green-accent);">✓ Booked</button>`
                     : isCreator
                         ? `<button class="btn" disabled>Your Event</button>`
-                        : isFull
-                            ? `<div style="display:flex; gap:8px; width:100%">
-                                   <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
-                                   <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
-                               </div>`
-                            : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
+                        : isOnWaitlist
+                            ? `<button class="btn" style="border-color: var(--orange-accent); color: var(--orange-accent);" onclick="leaveWaitlist(${e.id})">Leave Waitlist</button>`
+                            : isFull
+                                ? `<div style="display:flex; gap:8px; width:100%">
+                                       <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
+                                       <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
+                                   </div>`
+                                : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
                 const mapButton = `<button class="btn" onclick="showMapModal('${e.venue}')">📍 View on Map</button>`;
                 const qrButton = `<button class="btn" onclick="openQrModal(${e.id})">🔳 Show QR</button>`;
                 // Show confirmation CTA only if organiser requested this user for a role and it's pending
@@ -1299,6 +1302,22 @@ async function cancelWait(eventId){
     if(res.ok && data.ok){ alert('Removed from waitlist.'); await renderTickets(true); renderTickets(); renderEvents(); setTimeout(renderEvents, 500); }
     else { alert('Error: '+(data.error||'Failed to leave waitlist.')); }
 }
+
+async function leaveWaitlist(eventId){
+    if(!confirm('Leave the waitlist for this event?')) return;
+    const res = await fetch(API+"/waitlist/leave", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ eventId, regNumber: currentUser.regNumber })});
+    const data = await res.json();
+    if(res.ok && data.ok){ 
+        alert('Removed from waitlist.'); 
+        await renderTickets(true); 
+        renderTickets(); 
+        renderEvents(); 
+        setTimeout(renderEvents, 500); 
+    }
+    else { 
+        alert('Error: ' + (data.error || 'Failed to leave waitlist.')); 
+    }
+}
 async function cancelTicket(e,t){if(confirm(`Are you sure you want to cancel your ticket for "${t}"?`)){const t=await fetch(API+"/tickets",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({eventId:e,regNumber:currentUser.regNumber})}),n=await t.json();t.ok&&n.ok?(alert("Ticket cancelled successfully."),await renderTickets(!0),renderTickets(),renderEvents()):alert("Error: "+(n.error||"Failed to cancel ticket."))}}
 
 // ---------- Organizer Functions ----------
@@ -1704,8 +1723,56 @@ async function loadWaitlistForEvent(eventId){
         const el = document.getElementById(`wl-${eventId}`);
         if (!res.ok || !data.ok) { el.textContent = 'Failed to load waitlist.'; return; }
         if (!data.waitlist || data.waitlist.length === 0) { el.textContent = 'No users on waitlist.'; return; }
-        el.innerHTML = data.waitlist.map((w,i)=> `<div class="kv"><b>#${i+1}</b> <span class="value">${w.name} (${w.regNumber})</span></div>`).join('');
+        el.innerHTML = data.waitlist.map((w,i)=> `<div class="kv"><b>#${i+1}</b> <span class="value" style="cursor: pointer; color: #93c5fd;" onclick="showWaitlistTicketDetails(${eventId}, '${w.regNumber}', '${w.name}')">${w.name} (${w.regNumber})</span></div>`).join('');
     }catch(err){ const el = document.getElementById(`wl-${eventId}`); if(el) el.textContent = 'Failed to load waitlist.'; }
+}
+
+async function showWaitlistTicketDetails(eventId, regNumber, name){
+    try {
+        const res = await fetch(`${API}/waitlist/${eventId}?organizerReg=${currentUser.regNumber}`);
+        const data = await res.json();
+        if (!res.ok || !data.ok) { alert('Failed to load waitlist details'); return; }
+        
+        const waitlistEntry = data.waitlist.find(w => w.regNumber === regNumber);
+        if (!waitlistEntry) { alert('Waitlist entry not found'); return; }
+        
+        const position = data.waitlist.findIndex(w => w.regNumber === regNumber) + 1;
+        
+        const modal = document.getElementById('modal');
+        const body = document.getElementById('modal-body');
+        body.innerHTML = `
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                <a class="map-back-arrow" onclick="closeModal()">←</a>
+                <h3 style="margin:0;">📋 Waitlist Ticket Details</h3>
+            </div>
+            <div class="card">
+                <div class="kv">
+                    <b>Name:</b> <span class="value">${name}</span>
+                </div>
+                <div class="kv">
+                    <b>Registration Number:</b> <span class="value">${regNumber}</span>
+                </div>
+                <div class="kv">
+                    <b>Position in Queue:</b> <span class="value">#${position}</span>
+                </div>
+                <div class="kv">
+                    <b>Joined Waitlist:</b> <span class="value">${new Date(waitlistEntry.time).toLocaleString()}</span>
+                </div>
+                <div class="kv">
+                    <b>Waitlist ID:</b> <span class="value">${waitlistEntry.id}</span>
+                </div>
+                <div class="kv">
+                    <b>Status:</b> <span class="value" style="color: #f59e0b;">⏳ Waiting</span>
+                </div>
+            </div>
+            <div style="margin-top: 10px;">
+                <button class="btn" onclick="closeModal()">Close</button>
+            </div>
+        `;
+        modal.style.display = 'flex';
+    } catch(err) {
+        alert('Failed to load waitlist ticket details');
+    }
 }
 
 function openWaitlistModal(eventId, title){
