@@ -1096,6 +1096,9 @@ app.post('/api/volunteers/add', async (req, res) => {
   // Update organizer's last seen
   await updateUserLastSeen(organizerReg);
   
+  // Broadcast event change for real-time updates
+  try { broadcast('events_changed', { reason: 'volunteer_invited', eventId: event.id }); } catch {}
+  
   res.json({ ok: true, request });
 });
 

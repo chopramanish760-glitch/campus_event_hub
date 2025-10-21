@@ -1723,7 +1723,17 @@ async function loadWaitlistForEvent(eventId){
         const el = document.getElementById(`wl-${eventId}`);
         if (!res.ok || !data.ok) { el.textContent = 'Failed to load waitlist.'; return; }
         if (!data.waitlist || data.waitlist.length === 0) { el.textContent = 'No users on waitlist.'; return; }
-        el.innerHTML = data.waitlist.map((w,i)=> `<div class="kv"><b>#${i+1}</b> <span class="value" style="cursor: pointer; color: #93c5fd;" onclick="showWaitlistTicketDetails(${eventId}, '${w.regNumber}', '${w.name}')">${w.name} (${w.regNumber})</span></div>`).join('');
+        el.innerHTML = data.waitlist.map((w,i)=> `<div class="kv"><b>#${i+1}</b> <span class="value waitlist-name" style="cursor: pointer; color: #93c5fd;" data-event-id="${eventId}" data-reg-number="${w.regNumber}" data-name="${w.name}">${w.name} (${w.regNumber})</span></div>`).join('');
+        
+        // Add click event listeners to all waitlist names
+        el.querySelectorAll('.waitlist-name').forEach(span => {
+            span.addEventListener('click', function() {
+                const eventId = this.getAttribute('data-event-id');
+                const regNumber = this.getAttribute('data-reg-number');
+                const name = this.getAttribute('data-name');
+                showWaitlistTicketDetails(eventId, regNumber, name);
+            });
+        });
     }catch(err){ const el = document.getElementById(`wl-${eventId}`); if(el) el.textContent = 'Failed to load waitlist.'; }
 }
 
