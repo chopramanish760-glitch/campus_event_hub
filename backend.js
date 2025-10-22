@@ -780,7 +780,10 @@ app.put("/api/events/:id", async (req, res) => {
   // Update organizer's last seen
   await updateUserLastSeen(regNumber);
   
-  try { broadcast('events_changed', { reason: 'updated', eventId: event.id }); } catch {}
+  try { 
+    broadcast('events_changed', { reason: 'updated', eventId: event.id }); 
+    broadcast('event_updated', { reason: 'details_updated', eventId: event.id }); 
+  } catch {}
   res.json({ ok: true, event });
 });
 
@@ -978,6 +981,7 @@ app.post("/api/tickets/admin-cancel", async (req, res) => {
   try {
     broadcast('events_changed', { reason: 'ticket_cancelled_by_organizer', eventId: event.id });
     broadcast('tickets_changed', { reason: 'cancelled_by_organizer', eventId: event.id }, targetRegNumber);
+    broadcast('ticket_cancelled', { reason: 'organizer_cancelled', eventId: event.id }, targetRegNumber);
   } catch {}
   res.json({ ok: true });
 });
@@ -1632,6 +1636,12 @@ app.post("/api/media", upload.single("file"), async (req, res) => {
     // Update organizer's last seen
     await updateUserLastSeen(regNumber);
     
+    // Broadcast media change for real-time updates
+    try { 
+      broadcast('events_changed', { reason: 'media_uploaded', eventId: parseInt(eventId) }); 
+      broadcast('media_changed', { reason: 'uploaded', eventId: parseInt(eventId) }); 
+    } catch {}
+    
     console.log(`📁 File saved to GridFS: ${req.file.originalname} (${req.file.size} bytes)`);
     res.json({ ok: true, media });
   } catch (err) {
@@ -1657,7 +1667,15 @@ app.delete("/api/media/:mediaId", async (req, res) => {
     }
   }
   
-  data.media.splice(mediaIndex, 1); await saveData(data);
+  data.media.splice(mediaIndex, 1); 
+  await saveData(data);
+  
+  // Broadcast media change for real-time updates
+  try { 
+    broadcast('events_changed', { reason: 'media_deleted', eventId: media.eventId }); 
+    broadcast('media_changed', { reason: 'deleted', eventId: media.eventId }); 
+  } catch {}
+  
   res.json({ ok: true, message: "Media deleted successfully." });
 });
 

@@ -656,6 +656,7 @@ async function renderEvents() {
                 const isCreator = currentUser && e.creatorRegNumber === currentUser.regNumber;
                 const div = document.createElement("div"); div.className = "card";
                 const startTime = parseEventDateTime(e.date, e.time);
+                const isEventLive = new Date() >= startTime;
                 const statusElementId = `countdown-${e.id}`;
                 div.innerHTML = `
                     <div class="category-badge">${e.category}</div>
@@ -678,15 +679,21 @@ async function renderEvents() {
                     : isCreator
                         ? `<button class="btn" disabled>Your Event</button>`
                         : isOnWaitlist
-                            ? `<button class="btn" style="border-color: var(--orange-accent); color: var(--orange-accent);" onclick="leaveWaitlist(${e.id})">Leave Waitlist</button>`
+                            ? (isEventLive 
+                                ? `<button class="btn" disabled style="border-color: var(--orange-accent); color: var(--orange-accent); opacity: 0.5;">Event Live - Cannot Leave</button>`
+                                : `<button class="btn" style="border-color: var(--orange-accent); color: var(--orange-accent);" onclick="leaveWaitlist(${e.id})">Leave Waitlist</button>`)
                             : isBooked
                                 ? `<button class="btn" disabled style="background: var(--green-accent); border-color: var(--green-accent);">✓ Booked</button>`
                         : isFull
-                            ? `<div style="display:flex; gap:8px; width:100%">
-                                   <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
-                                   <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
-                               </div>`
-                            : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
+                            ? (isEventLive
+                                ? `<button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); opacity: 0.5;">Event Live - Venue Full</button>`
+                                : `<div style="display:flex; gap:8px; width:100%">
+                                       <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
+                                       <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
+                                   </div>`)
+                            : (isEventLive
+                                ? `<button class="btn" disabled style="opacity: 0.5;">Event Live - Cannot Book</button>`
+                                : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`);
                 const mapButton = `<button class="btn" onclick="showMapModal('${e.venue}')">📍 View on Map</button>`;
                 const qrButton = `<button class="btn" onclick="openQrModal(${e.id})">🔳 Show QR</button>`;
                 // Show confirmation CTA only if organiser requested this user for a role and it's pending
@@ -1133,6 +1140,30 @@ function startLiveUpdates(){
     };
     es.addEventListener('events_changed', refresh);
     es.addEventListener('tickets_changed', (e)=>{
+        try{
+            const data = JSON.parse(e.data||'{}');
+            if(currentUser && data && data.eventId){
+                refresh();
+            }
+        }catch{ refresh(); }
+    });
+    es.addEventListener('media_changed', (e)=>{
+        try{
+            const data = JSON.parse(e.data||'{}');
+            if(currentUser && data && data.eventId){
+                refresh();
+            }
+        }catch{ refresh(); }
+    });
+    es.addEventListener('event_updated', (e)=>{
+        try{
+            const data = JSON.parse(e.data||'{}');
+            if(currentUser && data && data.eventId){
+                refresh();
+            }
+        }catch{ refresh(); }
+    });
+    es.addEventListener('ticket_cancelled', (e)=>{
         try{
             const data = JSON.parse(e.data||'{}');
             if(currentUser && data && data.eventId){
