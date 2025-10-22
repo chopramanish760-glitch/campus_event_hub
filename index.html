@@ -169,46 +169,12 @@ const API_BASE = (function(){
 const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
 const GOOGLE_MAPS_API_KEY = "AIzaSyAEze6N-tLo6Da6KU-PLcFBQ4zL3eT0BT0";
-let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null; let __keepAliveInterval = null;
+let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null;
 
 
 let welcomeBannerUntil = 0;
 let lastUpcomingCount = -1;
 let currentHomeView = 'upcoming'; let currentMediaView = 'upcoming';
-
-// Keep-alive function to prevent server sleep
-function startKeepAlive() {
-  if (__keepAliveInterval) clearInterval(__keepAliveInterval);
-  __keepAliveInterval = setInterval(async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      const response = await fetch(API_BASE + '/api/ping', {
-        method: 'GET',
-        signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (response.ok) {
-        console.log('🔄 Keep-alive ping successful');
-      } else {
-        console.warn('⚠️ Keep-alive ping failed:', response.status);
-      }
-    } catch (error) {
-      console.warn('⚠️ Keep-alive ping error:', error.message);
-    }
-  }, 300000); // Ping every 5 minutes
-}
-
-function stopKeepAlive() {
-  if (__keepAliveInterval) {
-    clearInterval(__keepAliveInterval);
-    __keepAliveInterval = null;
-  }
-}
 
 // Persistent login functions
 function saveUserSession(user) {
@@ -328,8 +294,7 @@ function logout() {
     clearUserSession(); // Clear saved session
     clearInterval(notificationInterval); 
     clearInterval(eventStateInterval); 
-    clearInterval(countdownInterval);
-    stopKeepAlive(); // Stop keep-alive pings 
+    clearInterval(countdownInterval); 
     notificationInterval = null; 
     eventStateInterval = null; 
     countdownInterval = null; 
@@ -1093,25 +1058,12 @@ async function doLogin() {
     
     console.log("🔍 Login attempt:", { regNumber, API_BASE, API });
     
-    // Retry logic for server sleep issues
-    const maxRetries = 3;
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-            
-            msg.textContent = retryCount > 0 ? `⏳ Retrying login... (${retryCount}/${maxRetries-1})` : "⏳ Logging in...";
-            
-            const res = await fetch(API + "/login", { 
-                method: "POST", 
-                headers: { "Content-Type": "application/json" }, 
-                body: JSON.stringify({ regNumber, password }),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
+    try {
+        const res = await fetch(API + "/login", { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify({ regNumber, password }) 
+        });
             
             console.log("📡 Login response:", res.status, res.statusText);
             
@@ -1144,31 +1096,19 @@ async function doLogin() {
                     setInterval(checkEventStartNotifications, 60000); // Check every minute
                     // Start live updates stream
                     try { startLiveUpdates(); } catch (e) { console.warn('SSE unavailable', e); }
-                    // Start keep-alive to prevent server sleep
-                    startKeepAlive();
                     renderTabs(); 
                     showTab("home");
                     
                     // Welcome back banner
                     showWelcomeBanner(`👋 Welcome back, ${data.user.name}!`);
                 }, 1000);
-                return; // Success, exit retry loop
-            } else { 
-                console.error("❌ Login failed:", data);
-                msg.textContent = "❌ " + (data.error || "Login failed"); 
-                return; // Authentication error, don't retry
-            }
-        } catch (err) { 
-            console.error("❌ Login network error:", err);
-            retryCount++;
-            
-            if (retryCount < maxRetries) {
-                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
-            } else {
-                msg.textContent = "❌ Server appears to be sleeping. Please try again in a moment or refresh the page.";
-            }
+        } else { 
+            console.error("❌ Login failed:", data);
+            msg.textContent = "❌ " + (data.error || "Login failed"); 
         }
+    } catch (err) { 
+        console.error("❌ Login network error:", err);
+        msg.textContent = "❌ Network error - check console for details"; 
     }
 }
 
@@ -1250,25 +1190,12 @@ async function doSignup() {
     
     console.log("🔍 Signup attempt:", { regNumber: user.regNumber, API_BASE, API });
     
-    // Retry logic for server sleep issues
-    const maxRetries = 3;
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-            
-            msg.textContent = retryCount > 0 ? `⏳ Retrying signup... (${retryCount}/${maxRetries-1})` : "⏳ Signing up...";
-            
-            const res = await fetch(API + "/signup", { 
-                method: "POST", 
-                headers: { "Content-Type": "application/json" }, 
-                body: JSON.stringify(user),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
+    try {
+        const res = await fetch(API + "/signup", { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify(user) 
+        });
             
             console.log("📡 Signup response:", res.status, res.statusText);
             
@@ -1305,8 +1232,6 @@ async function doSignup() {
                             eventStateInterval = setInterval(checkEventStates, 30000);
                             // Start event start notifications checker
                             setInterval(checkEventStartNotifications, 60000); // Check every minute
-                            // Start keep-alive to prevent server sleep
-                            startKeepAlive();
                             renderTabs();
                             showTab("home");
                             // Welcome banner for new signup
@@ -1320,23 +1245,13 @@ async function doSignup() {
                         showLogin();
                     }
                 }, 2000);
-                return; // Success, exit retry loop
-            } else { 
-                console.error("❌ Signup failed:", data);
-                msg.textContent = "❌ " + (data.error || "Signup failed"); 
-                return; // Authentication error, don't retry
-            }
-        } catch (err) { 
-            console.error("❌ Signup network error:", err);
-            retryCount++;
-            
-            if (retryCount < maxRetries) {
-                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
-            } else {
-                msg.textContent = "❌ Server appears to be sleeping. Please try again in a moment or refresh the page.";
-            }
+        } else { 
+            console.error("❌ Signup failed:", data);
+            msg.textContent = "❌ " + (data.error || "Signup failed"); 
         }
+    } catch (err) { 
+        console.error("❌ Signup network error:", err);
+        msg.textContent = "❌ Network error - check console for details"; 
     }
 }
 async function doResetPassword() { const e = document.getElementById("resetReg").value, t = document.getElementById("resetRole").value, n = document.getElementById("newPassword").value, c = document.getElementById("confirmNewPassword").value, a = document.getElementById("resetMsg"); if(n!==c){ a.textContent = "❌ Passwords do not match"; return;} if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(n)) return void (a.textContent = "❌ Password must contain uppercase, lowercase, number and be at least 6 characters long"); a.textContent = "⏳ Resetting password..."; try { const i = await fetch(API + "/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regNumber: e, role: t, newPassword: n }) }), o = await i.json(); i.ok && o.ok ? (a.textContent = "✅ Password changed successfully! Redirecting...", setTimeout(showLogin, 1000)) : a.textContent = "❌ " + (o.error || "Password reset failed.") } catch { a.textContent = "❌ Network error" } }
@@ -3442,55 +3357,12 @@ async function doAdminLogin(){
     const password = document.getElementById('adminPass').value;
     const msg = document.getElementById('adminMsg'); 
     msg.textContent='⏳ Logging in...';
-    
-    // Retry logic for server sleep issues
-    const maxRetries = 3;
-    let retryCount = 0;
-    
-    while (retryCount < maxRetries) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-            
-            msg.textContent = retryCount > 0 ? `⏳ Retrying admin login... (${retryCount}/${maxRetries-1})` : '⏳ Logging in...';
-            
-            const res = await fetch(API+"/admin/login", { 
-                method:'POST', 
-                headers:{'Content-Type':'application/json'}, 
-                body: JSON.stringify({ username, password }),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
-            
-            const data = await res.json();
-            if(res.ok && data.ok){ 
-                window.__isAdmin = true; 
-                currentUser = null; 
-                try{ saveUserSession(null); }catch{} 
-                msg.textContent='✅ Admin logged in'; 
-                renderTabs(); 
-                showTab('admin'); 
-                // Start keep-alive for admin
-                startKeepAlive();
-                return; // Success, exit retry loop
-            }
-            else { 
-                msg.textContent='❌ '+(data.error||'Login failed'); 
-                return; // Authentication error, don't retry
-            }
-        } catch (err) {
-            console.error("❌ Admin login network error:", err);
-            retryCount++;
-            
-            if (retryCount < maxRetries) {
-                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
-                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
-            } else {
-                msg.textContent='❌ Server appears to be sleeping. Please try again in a moment or refresh the page.';
-            }
-        }
-    }
+    try{
+        const res = await fetch(API+"/admin/login", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
+        const data = await res.json();
+        if(res.ok && data.ok){ window.__isAdmin = true; currentUser = null; try{ saveUserSession(null); }catch{} msg.textContent='✅ Admin logged in'; renderTabs(); showTab('admin'); }
+        else { msg.textContent='❌ '+(data.error||'Login failed'); }
+    }catch{ msg.textContent='❌ Network error'; }
 }
 
 function renderAdmin(){
