@@ -247,6 +247,55 @@ async function initializeApp() {
   
   // Start the server AFTER everything is initialized
   app.listen(PORT, () => console.log(`✅ Backend running at http://localhost:${PORT}`));
+  
+  // Start checking for event live notifications every minute
+  setInterval(checkEventLiveNotifications, 60000);
+}
+
+// Check for events that just went live and notify waiting list users
+async function checkEventLiveNotifications() {
+  try {
+    const data = await loadData();
+    const now = new Date();
+    
+    for (const event of data.events) {
+      const eventStart = new Date(`${event.date}T${event.time}`);
+      
+      // Check if event just went live (within the last 5 minutes)
+      const timeSinceStart = now.getTime() - eventStart.getTime();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      if (timeSinceStart >= 0 && timeSinceStart <= fiveMinutes && event.waitlist && event.waitlist.length > 0) {
+        // Check if we already sent notifications for this event
+        const notificationKey = `live_notified_${event.id}`;
+        if (!data.eventNotifications) data.eventNotifications = {};
+        
+        if (!data.eventNotifications[notificationKey]) {
+          // Send notifications to all waiting list users
+          for (const waitlistUser of event.waitlist) {
+            if (!data.notifications[waitlistUser.regNumber]) {
+              data.notifications[waitlistUser.regNumber] = [];
+            }
+            
+            const notificationMsg = `😔 Sorry, your ticket for "${event.title}" could not be confirmed as the event has started.`;
+            data.notifications[waitlistUser.regNumber].unshift({
+              msg: notificationMsg,
+              time: now.toISOString(),
+              read: false
+            });
+          }
+          
+          // Mark that we've sent notifications for this event
+          data.eventNotifications[notificationKey] = true;
+          await saveData(data);
+          
+          console.log(`📢 Sent live event notifications to ${event.waitlist.length} waiting list users for event: ${event.title}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error checking event live notifications:', error);
+  }
 }
 
 // Start the application
@@ -893,6 +942,12 @@ app.post("/api/tickets/admin-cancel", async (req, res) => {
   if (event.creatorRegNumber !== organizerRegNumber) {
     return res.status(403).json({ ok: false, error: "Only the organizer can cancel bookings for this event." });
   }
+  
+  // Check if target user is the event creator (only protect the event creator from cancellation)
+  if (targetRegNumber === event.creatorRegNumber) {
+    return res.status(403).json({ ok: false, error: "Cannot cancel the event creator's ticket." });
+  }
+  
   const eventStartTime = new Date(`${event.date}T${event.time}`);
   if (eventStartTime < new Date()) return res.status(403).json({ ok: false, error: "Cannot cancel bookings for a live or past event." });
   const bookingIndex = event.bookings.findIndex(b => b.regNumber === targetRegNumber);
