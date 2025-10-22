@@ -169,12 +169,46 @@ const API_BASE = (function(){
 const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
 const GOOGLE_MAPS_API_KEY = "AIzaSyAEze6N-tLo6Da6KU-PLcFBQ4zL3eT0BT0";
-let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null;
+let currentUser = null; let userTickets = []; let notificationInterval = null; let eventStateInterval = null; let countdownInterval = null; let __modalIntervals = {}; let __eventSource = null; let __keepAliveInterval = null;
 
 
 let welcomeBannerUntil = 0;
 let lastUpcomingCount = -1;
 let currentHomeView = 'upcoming'; let currentMediaView = 'upcoming';
+
+// Keep-alive function to prevent server sleep
+function startKeepAlive() {
+  if (__keepAliveInterval) clearInterval(__keepAliveInterval);
+  __keepAliveInterval = setInterval(async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(API_BASE + '/api/ping', {
+        method: 'GET',
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        console.log('🔄 Keep-alive ping successful');
+      } else {
+        console.warn('⚠️ Keep-alive ping failed:', response.status);
+      }
+    } catch (error) {
+      console.warn('⚠️ Keep-alive ping error:', error.message);
+    }
+  }, 300000); // Ping every 5 minutes
+}
+
+function stopKeepAlive() {
+  if (__keepAliveInterval) {
+    clearInterval(__keepAliveInterval);
+    __keepAliveInterval = null;
+  }
+}
 
 // Persistent login functions
 function saveUserSession(user) {
@@ -294,7 +328,8 @@ function logout() {
     clearUserSession(); // Clear saved session
     clearInterval(notificationInterval); 
     clearInterval(eventStateInterval); 
-    clearInterval(countdownInterval); 
+    clearInterval(countdownInterval);
+    stopKeepAlive(); // Stop keep-alive pings 
     notificationInterval = null; 
     eventStateInterval = null; 
     countdownInterval = null; 
@@ -1058,57 +1093,82 @@ async function doLogin() {
     
     console.log("🔍 Login attempt:", { regNumber, API_BASE, API });
     
-    try {
-        const res = await fetch(API + "/login", { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify({ regNumber, password }) 
-        });
-        
-        console.log("📡 Login response:", res.status, res.statusText);
-        
-        const data = await res.json();
-        console.log("📊 Login data:", data);
-        
-        if (res.ok && data.ok) {
-            msg.textContent = "✅ Login successful! Redirecting...";
-            setTimeout(async () => {
-                currentUser = data.user;
-                
-                // Check if "Remember Me" is checked
-                const rememberMe = document.getElementById("rememberMe");
-                if (rememberMe && rememberMe.checked) {
-                    saveUserSession(currentUser); // Save user session
-                }
-                
-                await renderTickets(true); 
-                // If arrived via QR (qr_e param), proceed to QR flow after login
-                const params = new URLSearchParams(location.search);
-                const qrEvent = params.get('qr_e');
-                if (qrEvent) {
-                    // Show event details and a single QR book button
-                    try { await handleQrFlowAfterLogin(Number(qrEvent)); } catch {}
-                }
-                pollNotifications();
-                notificationInterval = setInterval(pollNotifications, 5000);
-                eventStateInterval = setInterval(checkEventStates, 30000);
-                // Start event start notifications checker
-                setInterval(checkEventStartNotifications, 60000); // Check every minute
-                // Start live updates stream
-                try { startLiveUpdates(); } catch (e) { console.warn('SSE unavailable', e); }
-                renderTabs(); 
-                showTab("home");
-                
-                // Welcome back banner
-                showWelcomeBanner(`👋 Welcome back, ${data.user.name}!`);
-            }, 1000);
-        } else { 
-            console.error("❌ Login failed:", data);
-            msg.textContent = "❌ " + (data.error || "Login failed"); 
+    // Retry logic for server sleep issues
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            msg.textContent = retryCount > 0 ? `⏳ Retrying login... (${retryCount}/${maxRetries-1})` : "⏳ Logging in...";
+            
+            const res = await fetch(API + "/login", { 
+                method: "POST", 
+                headers: { "Content-Type": "application/json" }, 
+                body: JSON.stringify({ regNumber, password }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            console.log("📡 Login response:", res.status, res.statusText);
+            
+            const data = await res.json();
+            console.log("📊 Login data:", data);
+            
+            if (res.ok && data.ok) {
+                msg.textContent = "✅ Login successful! Redirecting...";
+                setTimeout(async () => {
+                    currentUser = data.user;
+                    
+                    // Check if "Remember Me" is checked
+                    const rememberMe = document.getElementById("rememberMe");
+                    if (rememberMe && rememberMe.checked) {
+                        saveUserSession(currentUser); // Save user session
+                    }
+                    
+                    await renderTickets(true); 
+                    // If arrived via QR (qr_e param), proceed to QR flow after login
+                    const params = new URLSearchParams(location.search);
+                    const qrEvent = params.get('qr_e');
+                    if (qrEvent) {
+                        // Show event details and a single QR book button
+                        try { await handleQrFlowAfterLogin(Number(qrEvent)); } catch {}
+                    }
+                    pollNotifications();
+                    notificationInterval = setInterval(pollNotifications, 5000);
+                    eventStateInterval = setInterval(checkEventStates, 30000);
+                    // Start event start notifications checker
+                    setInterval(checkEventStartNotifications, 60000); // Check every minute
+                    // Start live updates stream
+                    try { startLiveUpdates(); } catch (e) { console.warn('SSE unavailable', e); }
+                    // Start keep-alive to prevent server sleep
+                    startKeepAlive();
+                    renderTabs(); 
+                    showTab("home");
+                    
+                    // Welcome back banner
+                    showWelcomeBanner(`👋 Welcome back, ${data.user.name}!`);
+                }, 1000);
+                return; // Success, exit retry loop
+            } else { 
+                console.error("❌ Login failed:", data);
+                msg.textContent = "❌ " + (data.error || "Login failed"); 
+                return; // Authentication error, don't retry
+            }
+        } catch (err) { 
+            console.error("❌ Login network error:", err);
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+            } else {
+                msg.textContent = "❌ Server appears to be sleeping. Please try again in a moment or refresh the page.";
+            }
         }
-    } catch (err) { 
-        console.error("❌ Login network error:", err);
-        msg.textContent = "❌ Network error - check console for details"; 
     }
 }
 
@@ -1190,68 +1250,93 @@ async function doSignup() {
     
     console.log("🔍 Signup attempt:", { regNumber: user.regNumber, API_BASE, API });
     
-    try {
-        const res = await fetch(API + "/signup", { 
-            method: "POST", 
-            headers: { "Content-Type": "application/json" }, 
-            body: JSON.stringify(user) 
-        });
-        
-        console.log("📡 Signup response:", res.status, res.statusText);
-        
-        const data = await res.json();
-        console.log("📊 Signup data:", data);
-        
-        if (res.ok && data.ok) {
-            if(user.role==='ORGANIZER'){
-                // Organizer requests are saved as STUDENT with organizerStatus=PENDING.
-                // Show centered 2s toast then auto-login and land on Home with Org tab disabled.
-                showCenterToast('✅ Request sent to admin for verification');
-                const pendingUser = data.user; // backend returns created user
-                try{ currentUser = pendingUser; saveUserSession(currentUser); }catch{}
-                renderTabs(); showTab('home');
-                return;
-            }
-            msg.textContent = "✅ Account created! Signing you in...";
-            setTimeout(async () => {
-                // Auto-login the newly created user
-                try {
-                    const loginRes = await fetch(API + "/login", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ regNumber: user.regNumber, password: user.password })
-                    });
-                    const loginData = await loginRes.json();
-                    
-                    if (loginRes.ok && loginData.ok) {
-                        currentUser = loginData.user;
-                        saveUserSession(currentUser); // Auto-save session for new users
-                        await renderTickets(true);
-                        pollNotifications();
-                        notificationInterval = setInterval(pollNotifications, 5000);
-                        eventStateInterval = setInterval(checkEventStates, 30000);
-                        // Start event start notifications checker
-                        setInterval(checkEventStartNotifications, 60000); // Check every minute
-                        renderTabs();
-                        showTab("home");
-                        // Welcome banner for new signup
-                        showWelcomeBanner(`🎉 Welcome, ${user.name}!`);
-                    } else {
+    // Retry logic for server sleep issues
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            msg.textContent = retryCount > 0 ? `⏳ Retrying signup... (${retryCount}/${maxRetries-1})` : "⏳ Signing up...";
+            
+            const res = await fetch(API + "/signup", { 
+                method: "POST", 
+                headers: { "Content-Type": "application/json" }, 
+                body: JSON.stringify(user),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            console.log("📡 Signup response:", res.status, res.statusText);
+            
+            const data = await res.json();
+            console.log("📊 Signup data:", data);
+            
+            if (res.ok && data.ok) {
+                if(user.role==='ORGANIZER'){
+                    // Organizer requests are saved as STUDENT with organizerStatus=PENDING.
+                    // Show centered 2s toast then auto-login and land on Home with Org tab disabled.
+                    showCenterToast('✅ Request sent to admin for verification');
+                    const pendingUser = data.user; // backend returns created user
+                    try{ currentUser = pendingUser; saveUserSession(currentUser); }catch{}
+                    renderTabs(); showTab('home');
+                    return;
+                }
+                msg.textContent = "✅ Account created! Signing you in...";
+                setTimeout(async () => {
+                    // Auto-login the newly created user
+                    try {
+                        const loginRes = await fetch(API + "/login", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ regNumber: user.regNumber, password: user.password })
+                        });
+                        const loginData = await loginRes.json();
+                        
+                        if (loginRes.ok && loginData.ok) {
+                            currentUser = loginData.user;
+                            saveUserSession(currentUser); // Auto-save session for new users
+                            await renderTickets(true);
+                            pollNotifications();
+                            notificationInterval = setInterval(pollNotifications, 5000);
+                            eventStateInterval = setInterval(checkEventStates, 30000);
+                            // Start event start notifications checker
+                            setInterval(checkEventStartNotifications, 60000); // Check every minute
+                            // Start keep-alive to prevent server sleep
+                            startKeepAlive();
+                            renderTabs();
+                            showTab("home");
+                            // Welcome banner for new signup
+                            showWelcomeBanner(`🎉 Welcome, ${user.name}!`);
+                        } else {
+                            // Fallback to login screen if auto-login fails
+                            showLogin();
+                        }
+                    } catch (error) {
                         // Fallback to login screen if auto-login fails
                         showLogin();
                     }
-                } catch (error) {
-                    // Fallback to login screen if auto-login fails
-                    showLogin();
-                }
-            }, 2000);
-        } else { 
-            console.error("❌ Signup failed:", data);
-            msg.textContent = "❌ " + (data.error || "Signup failed"); 
+                }, 2000);
+                return; // Success, exit retry loop
+            } else { 
+                console.error("❌ Signup failed:", data);
+                msg.textContent = "❌ " + (data.error || "Signup failed"); 
+                return; // Authentication error, don't retry
+            }
+        } catch (err) { 
+            console.error("❌ Signup network error:", err);
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+            } else {
+                msg.textContent = "❌ Server appears to be sleeping. Please try again in a moment or refresh the page.";
+            }
         }
-    } catch (err) { 
-        console.error("❌ Signup network error:", err);
-        msg.textContent = "❌ Network error - check console for details"; 
     }
 }
 async function doResetPassword() { const e = document.getElementById("resetReg").value, t = document.getElementById("resetRole").value, n = document.getElementById("newPassword").value, c = document.getElementById("confirmNewPassword").value, a = document.getElementById("resetMsg"); if(n!==c){ a.textContent = "❌ Passwords do not match"; return;} if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(n)) return void (a.textContent = "❌ Password must contain uppercase, lowercase, number and be at least 6 characters long"); a.textContent = "⏳ Resetting password..."; try { const i = await fetch(API + "/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regNumber: e, role: t, newPassword: n }) }), o = await i.json(); i.ok && o.ok ? (a.textContent = "✅ Password changed successfully! Redirecting...", setTimeout(showLogin, 1000)) : a.textContent = "❌ " + (o.error || "Password reset failed.") } catch { a.textContent = "❌ Network error" } }
@@ -3355,13 +3440,57 @@ function showAdminLogin(){
 async function doAdminLogin(){
     const username = document.getElementById('adminUser').value;
     const password = document.getElementById('adminPass').value;
-    const msg = document.getElementById('adminMsg'); msg.textContent='⏳ Logging in...';
-    try{
-        const res = await fetch(API+"/admin/login", { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ username, password })});
-        const data = await res.json();
-        if(res.ok && data.ok){ window.__isAdmin = true; currentUser = null; try{ saveUserSession(null); }catch{} msg.textContent='✅ Admin logged in'; renderTabs(); showTab('admin'); }
-        else { msg.textContent='❌ '+(data.error||'Login failed'); }
-    }catch{ msg.textContent='❌ Network error'; }
+    const msg = document.getElementById('adminMsg'); 
+    msg.textContent='⏳ Logging in...';
+    
+    // Retry logic for server sleep issues
+    const maxRetries = 3;
+    let retryCount = 0;
+    
+    while (retryCount < maxRetries) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
+            msg.textContent = retryCount > 0 ? `⏳ Retrying admin login... (${retryCount}/${maxRetries-1})` : '⏳ Logging in...';
+            
+            const res = await fetch(API+"/admin/login", { 
+                method:'POST', 
+                headers:{'Content-Type':'application/json'}, 
+                body: JSON.stringify({ username, password }),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            const data = await res.json();
+            if(res.ok && data.ok){ 
+                window.__isAdmin = true; 
+                currentUser = null; 
+                try{ saveUserSession(null); }catch{} 
+                msg.textContent='✅ Admin logged in'; 
+                renderTabs(); 
+                showTab('admin'); 
+                // Start keep-alive for admin
+                startKeepAlive();
+                return; // Success, exit retry loop
+            }
+            else { 
+                msg.textContent='❌ '+(data.error||'Login failed'); 
+                return; // Authentication error, don't retry
+            }
+        } catch (err) {
+            console.error("❌ Admin login network error:", err);
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+                msg.textContent = `⚠️ Connection failed, retrying in 2 seconds... (${retryCount}/${maxRetries})`;
+                await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+            } else {
+                msg.textContent='❌ Server appears to be sleeping. Please try again in a moment or refresh the page.';
+            }
+        }
+    }
 }
 
 function renderAdmin(){

@@ -2047,3 +2047,28 @@ app.post('/api/account/delete', async (req, res) => {
   await saveData(data);
   return res.json({ ok: true });
 });
+
+// Keep-alive endpoint to prevent server sleep
+app.get("/api/ping", (req, res) => {
+  res.json({ ok: true, timestamp: new Date().toISOString(), status: "alive" });
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    ok: true, 
+    timestamp: new Date().toISOString(), 
+    status: "healthy",
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  });
+});
+
+// Root endpoint for basic health check
+app.get("/", (req, res) => {
+  res.json({ 
+    message: "Campus Event Hub Backend", 
+    status: "running", 
+    timestamp: new Date().toISOString() 
+  });
+});
