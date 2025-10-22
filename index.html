@@ -678,12 +678,12 @@ async function renderEvents() {
                             ? `<button class="btn" style="border-color: var(--orange-accent); color: var(--orange-accent);" onclick="leaveWaitlist(${e.id})">Leave Waitlist</button>`
                             : isBooked
                                 ? `<button class="btn" disabled style="background: var(--green-accent); border-color: var(--green-accent);">✓ Booked</button>`
-                                : isFull
-                                    ? `<div style="display:flex; gap:8px; width:100%">
-                                           <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
-                                           <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
-                                       </div>`
-                                    : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
+                        : isFull
+                            ? `<div style="display:flex; gap:8px; width:100%">
+                                   <button class="btn" disabled style="border-color: var(--red-accent); color: var(--red-accent); flex:1;">Venue Full</button>
+                                   <button class="btn" style="flex:1;" onclick="joinWaitlist(${e.id})">Join Waitlist</button>
+                               </div>`
+                            : `<button class="btn primary" onclick="bookTicket(${e.id})">Book Ticket</button>`;
                 const mapButton = `<button class="btn" onclick="showMapModal('${e.venue}')">📍 View on Map</button>`;
                 const qrButton = `<button class="btn" onclick="openQrModal(${e.id})">🔳 Show QR</button>`;
                 // Show confirmation CTA only if organiser requested this user for a role and it's pending
@@ -2873,10 +2873,10 @@ function showLightbox(e,t){
                        webkit-playsinline 
                        muted
                        style="max-width: 100%; max-height: 80vh; background: #000;">
-                    <source src="${fullUrl}" type="video/mp4">
-                    <source src="${fullUrl}" type="video/webm">
-                    <source src="${fullUrl}" type="video/ogg">
-                    Your browser does not support the video tag.
+        <source src="${fullUrl}" type="video/mp4">
+        <source src="${fullUrl}" type="video/webm">
+        <source src="${fullUrl}" type="video/ogg">
+        Your browser does not support the video tag.
                 </video>
             </div>
         `;
@@ -3527,7 +3527,7 @@ async function adminOpenEventMedia(eventId){
                                oncanplay="hideVideoLoading(this)"
                                onerror="hideVideoLoading(this)"
                                onloadedmetadata="this.currentTime=1;">
-                        </video>
+                    </video>
                         <div class="video-loading-overlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; flex-direction: column;">
                             <div class="loading-spinner" style="width: 30px; height: 30px; border: 3px solid #f3f3f3; border-top: 3px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 10px;"></div>
                             <div class="loading-text" style="color: white; font-size: 12px; text-align: center;">Loading...</div>
