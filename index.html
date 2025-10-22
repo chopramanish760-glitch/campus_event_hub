@@ -651,6 +651,9 @@ async function renderEvents() {
                 const isOnWaitlist = currentUser && Array.isArray(e.waitlist) && e.waitlist.some(w => w.regNumber === currentUser.regNumber);
                 // Only consider it "booked" if user has a confirmed booking, not if they're on waitlist
                 const isBooked = bookedByMe || (currentUser && userTickets.some(t => t.eventId === e.id && !t.waiting));
+                const isFull = e.taken >= e.capacity;
+                const isVolunteer = currentUser && Array.isArray(e.volunteers) && e.volunteers.some(v => v.regNumber === currentUser.regNumber);
+                const isCreator = currentUser && e.creatorRegNumber === currentUser.regNumber;
                 const div = document.createElement("div"); div.className = "card";
                 const startTime = parseEventDateTime(e.date, e.time);
                 const statusElementId = `countdown-${e.id}`;
