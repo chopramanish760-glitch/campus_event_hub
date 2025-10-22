@@ -151,20 +151,7 @@
 <script>
 // Configure API base. You can set it via URL once: ?api=https://your-backend.onrender.com
 (function(){ try{ const qs=new URLSearchParams(location.search); const api=qs.get('api'); if(api){ localStorage.setItem('API_BASE', api); } }catch(_){} })();
-const API_BASE = (function(){
-  try{
-    const configured = (typeof window!=='undefined' && (window.API_BASE || localStorage.getItem('API_BASE')));
-    if(configured) return configured;
-    if(typeof window!=='undefined' && window.location && window.location.origin){ 
-      // Check if we're on Netlify and use the Render backend
-      if(window.location.hostname.includes('netlify')) {
-        return "https://campus-event-hub-1.onrender.com";
-      }
-      return window.location.origin; 
-    }
-  }catch{}
-  return "https://campus-event-hub-1.onrender.com"; // Default to Render backend
-})();
+const API_BASE = "https://campus-event-hub-1.onrender.com";
 // Force iframe maps to avoid API key issues on production
 const USE_IFRAME_MAPS = false;
 const API = API_BASE.replace(/\/$/, '') + "/api";
